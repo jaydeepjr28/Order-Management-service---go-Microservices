@@ -1,467 +1,209 @@
 # OMS Go Microservices
 
-A production-inspired **Order Management System (OMS)** built using **Go Microservices**, **gRPC**, **RabbitMQ**, and **OpenTelemetry**.
+> A production-inspired Order Management System built with **Go**,
+> **gRPC**, **RabbitMQ**, **Consul**, **OpenTelemetry**, and **Gin**.
 
-The project demonstrates how modern backend systems are designed using synchronous and asynchronous communication patterns, distributed tracing, and loosely coupled services.
+## Overview
 
----
+This project demonstrates how a distributed backend system can be built
+using a microservices architecture. It combines synchronous
+communication through **gRPC** with asynchronous event-driven
+communication using **RabbitMQ**. Service discovery is handled by
+**Consul**, while **OpenTelemetry** and **Jaeger** provide end-to-end
+distributed tracing.
 
-# Features
+## Key Features
 
-* Built using **5 independent Go microservices**
-* REST API exposed through an **API Gateway**
-* High-performance **gRPC** communication between internal services
-* **RabbitMQ** for asynchronous event-driven workflows
-* Distributed tracing using **OpenTelemetry + Jaeger**
-* Protocol Buffers for efficient service contracts
-* Containerized infrastructure using Docker
-* Clean separation of responsibilities across services
+-   API Gateway exposing REST endpoints
+-   Independent Go microservices
+-   gRPC for internal synchronous communication
+-   RabbitMQ for asynchronous workflows
+-   Consul service discovery and health registration
+-   OpenTelemetry tracing across HTTP, gRPC and AMQP
+-   Retry handling for message consumers
+-   Razorpay payment webhook integration
+-   Docker-based local development
 
----
+------------------------------------------------------------------------
 
-# Architecture
+# High-Level Architecture
 
-```text
-                           Client
-                              │
-                     HTTP REST Requests
-                              │
-                     ┌────────────────┐
-                     │  API Gateway   │
-                     └────────────────┘
-                         │        │
-                     gRPC│        │gRPC
-                         │        │
-               ┌─────────┘        └─────────┐
-               │                            │
-      ┌────────────────┐          ┌────────────────┐
-      │ Orders Service │◄────────►│ Stock Service  │
-      └────────────────┘   gRPC   └────────────────┘
-               │
-               │ Publish
-               ▼
-         ┌─────────────────┐
-         │    RabbitMQ     │
-         └─────────────────┘
-             │         │
-             │         │
-             ▼         ▼
-    ┌────────────────┐ ┌────────────────┐
-    │ Payments       │ │ Kitchen        │
-    │ Service        │ │ Service        │
-    └────────────────┘ └────────────────┘
-             │                 │
-             └────Publish──────┘
-                    Events
+``` text
+                    Client
                        │
-                       ▼
-               Orders Service
+                 HTTP / REST
+                       │
+                 ┌─────────────┐
+                 │ API Gateway │
+                 └─────────────┘
+                       │
+                     gRPC
+                       │
+                 ┌─────────────┐
+                 │   Orders    │
+                 └─────────────┘
+                 │           │
+          gRPC   │           │ Publish
+                 ▼           ▼
+          ┌──────────┐   RabbitMQ
+          │  Stock   │       │
+          └──────────┘       │
+                             ▼
+                     OrderCreated
+                             │
+                             ▼
+                     Payments Service
+                             │
+                  Razorpay Webhook
+                             │
+                             ▼
+                         OrderPaid
+                        Exchange
+                       /        \
+                      ▼          ▼
+                 Orders      Kitchen
+                                 │
+                               gRPC
+                                 ▼
+                             Orders
 ```
 
----
-
-# Order Processing Flow
-
-### Step 1
-
-A client creates an order using the REST API.
-
-```
-POST /api/customers/{customerId}/orders
-```
-
-↓
-
-### Step 2
-
-The API Gateway forwards the request to the **Orders Service** using **gRPC**.
-
-↓
-
-### Step 3
-
-Orders Service validates inventory by calling the **Stock Service**.
-
-↓
-
-### Step 4
-
-If stock is available:
-
-* Order is created
-* Order status becomes **Pending Payment**
-* `OrderCreated` event is published to RabbitMQ
-
-↓
-
-### Step 5
-
-Payments Service consumes the event.
-
-It:
-
-* Generates a payment link
-* Simulates payment
-* Publishes a `PaymentCompleted` event
-
-↓
-
-### Step 6
-
-Orders Service consumes the payment event and updates the order status.
-
-↓
-
-### Step 7
-
-Kitchen Service consumes the payment event.
-
-It:
-
-* Starts preparing the order
-* Simulates cooking
-* Publishes `OrderPrepared`
-
-↓
-
-### Step 8
-
-Orders Service receives the final event and marks the order as completed.
-
----
-
-# Microservices
+# Services
 
 ## API Gateway
 
-Responsibilities
+-   Public REST API
+-   Converts HTTP requests to gRPC
+-   Starts distributed traces
 
-* Exposes REST APIs
-* Converts HTTP requests into gRPC calls
-* Acts as the single entry point
-* Starts distributed traces
+## Orders
 
----
+-   Creates and stores orders
+-   Calls Stock through gRPC
+-   Publishes `OrderCreated`
+-   Consumes payment updates
+-   Maintains order state
 
-## Orders Service
+## Stock
 
-Responsibilities
+-   Inventory validation
+-   Synchronous gRPC API
 
-* Creates orders
-* Stores order information
-* Validates stock
-* Updates order status
-* Publishes order events
-* Consumes payment and kitchen events
+## Payments
 
----
+-   Consumes `OrderCreated`
+-   Creates payment links
+-   Processes Razorpay webhook
+-   Publishes `OrderPaid`
 
-## Stock Service
+## Kitchen
 
-Responsibilities
+-   Consumes `OrderPaid`
+-   Simulates preparation
+-   Calls Orders via gRPC to mark status
 
-* Maintains inventory
-* Validates stock availability
-* Returns stock information through gRPC
+------------------------------------------------------------------------
 
----
+# Communication
 
-## Payments Service
+## Synchronous (gRPC)
 
-Responsibilities
+-   Gateway → Orders
+-   Orders → Stock
+-   Kitchen → Orders
 
-* Consumes order events
-* Simulates payment processing
-* Generates payment links
-* Publishes payment completion events
+## Asynchronous (RabbitMQ)
 
----
+-   Orders → OrderCreated
+-   Payments → OrderPaid
+-   Orders consumes OrderPaid
+-   Kitchen consumes OrderPaid
 
-## Kitchen Service
-
-Responsibilities
-
-* Waits for successful payment
-* Simulates cooking
-* Publishes order completion events
-
----
-
-# Communication Patterns
-
-## Synchronous Communication
-
-Used when an immediate response is required.
-
-Technology:
-
-* gRPC
-
-Examples
-
-Gateway → Orders
-
-Orders → Stock
-
----
-
-## Asynchronous Communication
-
-Used for background workflows.
-
-Technology:
-
-* RabbitMQ
-
-Examples
-
-Orders → Payments
-
-Payments → Orders
-
-Payments → Kitchen
-
-Kitchen → Orders
-
----
+------------------------------------------------------------------------
 
 # Event Flow
 
-| Event            | Publisher | Consumer        |
-| ---------------- | --------- | --------------- |
-| OrderCreated     | Orders    | Payments        |
-| PaymentCompleted | Payments  | Orders, Kitchen |
-| OrderPrepared    | Kitchen   | Orders          |
+  Event          Publisher   Consumers
+  -------------- ----------- -----------------
+  OrderCreated   Orders      Payments
+  OrderPaid      Payments    Orders, Kitchen
 
----
+------------------------------------------------------------------------
 
-# Repository Structure
+# Typical Request Flow
 
-```text
-oms-go-microservices/
+1.  Client sends REST request to Gateway.
+2.  Gateway forwards request to Orders using gRPC.
+3.  Orders validates inventory through Stock.
+4.  Orders stores order and publishes `OrderCreated`.
+5.  Payments consumes the event and creates a payment.
+6.  Razorpay webhook confirms payment.
+7.  Payments publishes `OrderPaid`.
+8.  Orders updates payment status.
+9.  Kitchen consumes `OrderPaid`.
+10. Kitchen prepares the order.
+11. Kitchen updates Orders using gRPC.
 
-├── gateway/
-├── orders/
-├── stock/
-├── payments/
-├── kitchen/
-│
-├── common/
-│   ├── api/
-│   ├── broker/
-│   ├── tracing/
-│   └── utils/
-│
-├── docker-compose.yml
-├── go.work
-└── README.md
-```
+------------------------------------------------------------------------
 
----
+# Service Discovery
 
-# Technologies Used
+All services register with **Consul** and can discover each other
+dynamically instead of relying on hard-coded addresses.
 
-| Technology       | Purpose                                |
-| ---------------- | -------------------------------------- |
-| Go               | Microservice implementation            |
-| gRPC             | High-performance service communication |
-| Protocol Buffers | API contract generation                |
-| RabbitMQ         | Event-driven messaging                 |
-| Gin              | REST API Gateway                       |
-| OpenTelemetry    | Distributed tracing                    |
-| Jaeger           | Trace visualization                    |
-| Docker           | Infrastructure containerization        |
-
----
-
-# Prerequisites
-
-* Go 1.18+
-* Docker
-* RabbitMQ
-* Protocol Buffers Compiler
-* protoc-gen-go
-* protoc-gen-go-grpc
-
-# Getting Started
-
-## Clone Repository
-
-```bash
-git clone https://github.com/jaydeepjr28/oms-go-microservices.git
-
-cd oms-go-microservices
-```
-
----
-
-## Generate Protobuf Code
-
-```bash
-protoc \
---go_out=./common/api \
---go_opt=paths=source_relative \
---go-grpc_out=./common/api \
---go-grpc_opt=paths=source_relative \
-./common/api/oms.proto
-```
-
----
-
-## Start RabbitMQ
-
-```bash
-docker run -d \
---hostname rabbitmq \
---name rabbitmq \
--p 5672:5672 \
--p 15672:15672 \
-rabbitmq:3-management
-```
-
-RabbitMQ Dashboard
-
-```
-http://localhost:15672
-```
-
----
-
-## Start Jaeger
-
-```bash
-docker run -d \
---name jaeger \
--e COLLECTOR_OTLP_ENABLED=true \
--p 16686:16686 \
--p 4317:4317 \
-jaegertracing/all-in-one:latest
-```
-
-Jaeger UI
-
-```
-http://localhost:16686
-```
-
----
-
-## Run Services
-
-Start every service in a separate terminal.
-
-```bash
-cd stock && go run .
-
-cd orders && go run .
-
-cd payments && go run .
-
-cd kitchen && go run .
-
-cd gateway && go run .
-```
-
----
-
-# API Endpoints
-
-### Create Order
-
-```
-POST /api/customers/{customerId}/orders
-```
-
-Example Body
-
-```json
-[
-  {
-    "ID": "item1",
-    "Quantity": 2
-  },
-  {
-    "ID": "item2",
-    "Quantity": 1
-  }
-]
-```
-
----
-
-### Get Order
-
-```
-GET /api/customers/{customerId}/orders/{orderId}
-```
-
----
-
-# Service Ports
-
-| Service     | Default Port |
-| ----------- | ------------ |
-| Gateway     | 8080         |
-| Orders      | 50051        |
-| Stock       | 50052        |
-| Payments    | 50053        |
-| Kitchen     | 50054        |
-| RabbitMQ UI | 15672        |
-| Jaeger UI   | 16686        |
-
----
+------------------------------------------------------------------------
 
 # Observability
 
-Every incoming request creates a distributed trace that propagates across all services.
+OpenTelemetry propagates trace context across:
 
+-   HTTP
+-   gRPC
+-   RabbitMQ message headers
+
+Jaeger visualizes the complete lifecycle of a request.
+
+------------------------------------------------------------------------
+
+# Reliability
+
+-   Retry handling for failed consumers
+-   Health registration with Consul
+-   Decoupled asynchronous processing
+-   Loosely coupled services via events
+
+------------------------------------------------------------------------
+
+# Folder Structure
+
+``` text
+gateway/
+orders/
+stock/
+payments/
+kitchen/
+common/
 ```
-Gateway
-   │
-Orders
-   │
-Stock
-   │
-RabbitMQ
-   │
-Payments
-   │
-Kitchen
-   │
-Orders
-```
 
-The complete lifecycle of an order can be visualized inside **Jaeger**, making it easy to debug latency and understand service interactions.
+------------------------------------------------------------------------
 
----
+# Technology Stack
 
-# Design Patterns Demonstrated
+  Technology         Purpose
+  ------------------ -----------------------
+  Go                 Microservices
+  Gin                REST Gateway
+  gRPC               Service communication
+  Protocol Buffers   Contracts
+  RabbitMQ           Messaging
+  Consul             Service discovery
+  OpenTelemetry      Tracing
+  Jaeger             Trace visualization
+  Docker             Local infrastructure
 
-* API Gateway Pattern
-* Microservices Architecture
-* Event-Driven Architecture
-* Publisher–Subscriber Pattern
-* Request–Reply Pattern (gRPC)
-* Shared Protobuf Contracts
-* Distributed Tracing
-* Loose Service Coupling
-
----
-
-# Learning Objectives
-
-This project was built to explore production-grade backend concepts, including:
-
-* Designing scalable microservices
-* Building event-driven systems
-* Implementing synchronous and asynchronous communication
-* Using Protocol Buffers and gRPC
-* Understanding distributed tracing
-* Applying clean service boundaries
-* Building observable backend systems
-
----
+------------------------------------------------------------------------
 
 # License
 
-This project is intended for learning and educational purposes. Feel free to fork, modify, and experiment with it.
+Educational project for learning distributed systems and Go
+microservices.
