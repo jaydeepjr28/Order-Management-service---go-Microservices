@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"log"
 
 	pb "github.com/jaydeepjr28/commons/api"
 	"github.com/jaydeepjr28/commons/discovery"
@@ -19,7 +18,7 @@ func NewGateway(registry discovery.Registry) *gateway {
 func (g *gateway) UpdateOrderAfterPaymentLink(ctx context.Context, orderID, paymentLink string) error {
 	conn, err := discovery.ServiceConnection(context.Background(), "orders", g.registry)
 	if err != nil {
-		log.Fatalf("Failed to dial server: %v", err)
+		return err
 	}
 	defer conn.Close()
 

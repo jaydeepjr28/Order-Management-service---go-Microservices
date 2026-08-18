@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc"
 )
 
+// StockGrpcHandler implements the generated pb.StockServiceServer interface.
 type StockGrpcHandler struct {
 	pb.UnimplementedStockServiceServer
 
@@ -28,6 +29,7 @@ func NewGRPCHandler(
 	pb.RegisterStockServiceServer(server, handler)
 }
 
+// CheckIfItemIsInStock is called over gRPC by the Orders service during checkout.
 func (s *StockGrpcHandler) CheckIfItemIsInStock(ctx context.Context, p *pb.CheckIfItemIsInStockRequest) (*pb.CheckIfItemIsInStockResponse, error) {
 	inStock, items, err := s.service.CheckIfItemAreInStock(ctx, p.Items)
 	if err != nil {
@@ -40,6 +42,7 @@ func (s *StockGrpcHandler) CheckIfItemIsInStock(ctx context.Context, p *pb.Check
 	}, nil
 }
 
+// GetItems is called over gRPC by the Gateway to display the product catalog to the user.
 func (s *StockGrpcHandler) GetItems(ctx context.Context, payload *pb.GetItemsRequest) (*pb.GetItemsResponse, error) {
 	items, err := s.service.GetItems(ctx, payload.ItemIDs)
 	if err != nil {

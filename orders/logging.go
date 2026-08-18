@@ -25,6 +25,15 @@ func (s *LoggingMiddleware) GetOrder(ctx context.Context, p *pb.GetOrderRequest)
 	return s.next.GetOrder(ctx, p)
 }
 
+func (s *LoggingMiddleware) GetCustomerOrders(ctx context.Context, p *pb.GetCustomerOrdersRequest) (*pb.GetCustomerOrdersResponse, error) {
+	start := time.Now()
+	defer func() {
+		zap.L().Info("GetCustomerOrders", zap.Duration("took", time.Since(start)))
+	}()
+
+	return s.next.GetCustomerOrders(ctx, p)
+}
+
 func (s *LoggingMiddleware) UpdateOrder(ctx context.Context, o *pb.Order) (*pb.Order, error) {
 	start := time.Now()
 	defer func() {

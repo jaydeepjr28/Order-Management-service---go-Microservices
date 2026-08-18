@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	_ "github.com/joho/godotenv/autoload"
@@ -10,6 +13,7 @@ import (
 	"github.com/jaydeepjr28/commons/broker"
 	"github.com/jaydeepjr28/commons/discovery"
 	"github.com/jaydeepjr28/commons/discovery/consul"
+	"github.com/jaydeepjr28/omsv2-stock/gateway"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
@@ -21,11 +25,13 @@ var (
 	amqpUser    = common.EnvString("RABBITMQ_USER", "guest")
 	amqpPass    = common.EnvString("RABBITMQ_PASS", "guest")
 	amqpHost    = common.EnvString("RABBITMQ_HOST", "localhost")
-	amqpPort    = common.EnvString("RABBITMQ_PORT", "5672")
-	jaegerAddr  = common.EnvString("JAEGER_ADDR", "localhost:4318")
+	amqpPort       = common.EnvString("RABBITMQ_PORT", "5672")
+	jaegerAddr     = common.EnvString("JAEGER_ADDR", "localhost:4318")
+	advertisedAddr = common.EnvString("ADVERTISED_ADDR", "localhost:2002")
 )
 
 func main() {
+	// Initialize structured logging using Zap
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
@@ -35,6 +41,7 @@ func main() {
 		logger.Fatal("could set global tracer", zap.Error(err))
 	}
 
+	// Register this stock service with Consul for service discovery
 	registry, err := consul.NewRegistry(consulAddr, serviceName)
 	if err != nil {
 		panic(err)
@@ -42,10 +49,11 @@ func main() {
 
 	ctx := context.Background()
 	instanceID := discovery.GenerateInstanceID(serviceName)
-	if err := registry.Register(ctx, instanceID, serviceName, grpcAddr); err != nil {
+	if err := registry.Register(ctx, instanceID, serviceName, advertisedAddr); err != nil {
 		panic(err)
 	}
 
+	// Periodically ping Consul to stay registered as healthy
 	go func() {
 		for {
 			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
@@ -57,6 +65,7 @@ func main() {
 
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
+	// Connect to RabbitMQ to listen for OrderPaidEvents (to deduct stock)
 	ch, close := broker.Connect(amqpUser, amqpPass, amqpHost, amqpPort)
 	defer func() {
 		close()
@@ -71,18 +80,33 @@ func main() {
 	}
 	defer l.Close()
 
-	store := NewStore()
+	// Initialize the layers of the application
+	store := NewStore() // In-memory map of products
 	svc := NewService(store)
 	svcWithTelemetry := NewTelemetryMiddleware(svc)
 
 	NewGRPCHandler(grpcServer, ch, svcWithTelemetry)
 
-	consumer := NewConsumer()
+	ordersGateway := gateway.New(registry)
+	consumer := NewConsumer(svcWithTelemetry, ordersGateway)
+	
+	// Start consuming AMQP messages (OrderPaidEvent)
 	go consumer.Listen(ch)
 
 	logger.Info("Starting gRPC server", zap.String("port", grpcAddr))
 
-	if err := grpcServer.Serve(l); err != nil {
-		logger.Fatal("failed to serve", zap.Error(err))
-	}
+	// Start the gRPC server to answer queries about stock availability
+	go func() {
+		if err := grpcServer.Serve(l); err != nil {
+			logger.Fatal("failed to serve", zap.Error(err))
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	logger.Info("Shutting down server...")
+	grpcServer.GracefulStop()
+	logger.Info("Server exiting")
 }

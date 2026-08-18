@@ -4,6 +4,7 @@ option go_package = "github.com/jaydeepjr28/commons/api";
 
 package api;
 
+// Order represents a customer's order containing multiple items and its current status.
 message Order {
   string ID = 1;
   string customerID = 2;
@@ -12,15 +13,26 @@ message Order {
   string PaymentLink = 5;
 }
 
+// OrderService handles the core lifecycle of customer orders.
 service OrderService {
+  // CreateOrder submits a new order, validates stock, and publishes an OrderCreatedEvent.
   rpc CreateOrder(CreateOrderRequest) returns (Order);
   rpc GetOrder(GetOrderRequest) returns (Order);
+  rpc GetCustomerOrders(GetCustomerOrdersRequest) returns (GetCustomerOrdersResponse);
   rpc UpdateOrder(Order) returns (Order);
 }
 
 message GetOrderRequest {
   string OrderID = 1;
   string CustomerID = 2;
+}
+
+message GetCustomerOrdersRequest {
+  string CustomerID = 1;
+}
+
+message GetCustomerOrdersResponse {
+  repeated Order Orders = 1;
 }
 
 message Item {
@@ -40,7 +52,9 @@ message CreateOrderRequest {
   repeated ItemsWithQuantity Items = 2;
 }
 
+// StockService manages the product inventory across the platform.
 service StockService {
+  // CheckIfItemIsInStock verifies if the requested quantities are available and returns the full Item details.
   rpc CheckIfItemIsInStock(CheckIfItemIsInStockRequest) returns (CheckIfItemIsInStockResponse);
   rpc GetItems(GetItemsRequest) returns (GetItemsResponse);
 }
@@ -60,4 +74,79 @@ message GetItemsRequest {
 
 message GetItemsResponse {
   repeated Item Items = 1;
+}
+
+// User Service
+
+// UserService handles customer registration, authentication, and profile retrieval.
+service UserService {
+  // Register creates a new customer account and returns a JWT token.
+  rpc Register(RegisterRequest) returns (AuthResponse);
+  rpc Login(LoginRequest) returns (AuthResponse);
+  rpc GetUser(GetUserRequest) returns (User);
+}
+
+message RegisterRequest {
+  string Email = 1;
+  string Password = 2;
+  string Name = 3;
+}
+
+message LoginRequest {
+  string Email = 1;
+  string Password = 2;
+}
+
+message AuthResponse {
+  string Token = 1;
+  string CustomerID = 2;
+}
+
+message GetUserRequest {
+  string CustomerID = 1;
+}
+
+message User {
+  string ID = 1;
+  string Email = 2;
+  string Name = 3;
+}
+
+// Cart Service
+
+// CartService manages temporary shopping cart states for customers using Redis.
+service CartService {
+  // AddItem adds a product to the customer's cart or increments its quantity.
+  rpc AddItem(AddItemRequest) returns (Cart);
+  rpc RemoveItem(RemoveItemRequest) returns (Cart);
+  rpc GetCart(GetCartRequest) returns (Cart);
+  rpc ClearCart(ClearCartRequest) returns (Cart);
+}
+
+message CartItem {
+  string ProductID = 1;
+  int32 Quantity = 2;
+}
+
+message Cart {
+  string CustomerID = 1;
+  repeated CartItem Items = 2;
+}
+
+message AddItemRequest {
+  string CustomerID = 1;
+  CartItem Item = 2;
+}
+
+message RemoveItemRequest {
+  string CustomerID = 1;
+  string ProductID = 2;
+}
+
+message GetCartRequest {
+  string CustomerID = 1;
+}
+
+message ClearCartRequest {
+  string CustomerID = 1;
 }

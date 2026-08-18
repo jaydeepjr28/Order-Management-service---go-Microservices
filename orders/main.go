@@ -2,19 +2,18 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	common "github.com/jaydeepjr28/commons"
 	"github.com/jaydeepjr28/commons/broker"
 	"github.com/jaydeepjr28/commons/discovery"
 	"github.com/jaydeepjr28/commons/discovery/consul"
-	"github.com/sikozonpc/omsv2-orders/gateway"
+	"github.com/jaydeepjr28/omsv2-orders/gateway"
 	_ "github.com/joho/godotenv/autoload"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-	"go.mongodb.org/mongo-driver/mongo/readpref"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
@@ -27,14 +26,13 @@ var (
 	amqpPass    = common.EnvString("RABBITMQ_PASS", "guest")
 	amqpHost    = common.EnvString("RABBITMQ_HOST", "localhost")
 	amqpPort    = common.EnvString("RABBITMQ_PORT", "5672")
-	mongoUser   = common.EnvString("MONGO_DB_USER", "root")
-	mongoPass   = common.EnvString("MONGO_DB_PASS", "example")
-	mongoAddr   = common.EnvString("MONGO_DB_HOST", "localhost:27017")
-	jaegerAddr  = common.EnvString("JAEGER_ADDR", "localhost:4318")
+	jaegerAddr     = common.EnvString("JAEGER_ADDR", "localhost:4318")
+	advertisedAddr = common.EnvString("ADVERTISED_ADDR", "localhost:2000")
 )
 
 func main() {
-	logger, _ := zap.NewProduction()
+	// Initialize structured logging using Zap
+	logger,_ := zap.NewProduction()
 	defer logger.Sync()
 
 	zap.ReplaceGlobals(logger)
@@ -43,6 +41,7 @@ func main() {
 		logger.Fatal("could set global tracer", zap.Error(err))
 	}
 
+	// Initialize Consul registry to register this orders instance
 	registry, err := consul.NewRegistry(consulAddr, serviceName)
 	if err != nil {
 		panic(err)
@@ -50,10 +49,11 @@ func main() {
 
 	ctx := context.Background()
 	instanceID := discovery.GenerateInstanceID(serviceName)
-	if err := registry.Register(ctx, instanceID, serviceName, grpcAddr); err != nil {
+	if err := registry.Register(ctx, instanceID, serviceName, advertisedAddr); err != nil {
 		panic(err)
 	}
 
+	// Start health check ping to keep the service registered as healthy
 	go func() {
 		for {
 			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
@@ -65,18 +65,12 @@ func main() {
 
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
+	// Connect to RabbitMQ which is used for asynchronous events (e.g. order created, paid)
 	ch, close := broker.Connect(amqpUser, amqpPass, amqpHost, amqpPort)
 	defer func() {
 		close()
 		ch.Close()
 	}()
-
-	// mongo db conn
-	uri := fmt.Sprintf("mongodb://%s:%s@%s", mongoUser, mongoPass, mongoAddr)
-	mongoClient, err := connectToMongoDB(uri)
-	if err != nil {
-		logger.Fatal("failed to connect to mongo db", zap.Error(err))
-	}
 
 	grpcServer := grpc.NewServer()
 
@@ -86,33 +80,40 @@ func main() {
 	}
 	defer l.Close()
 
+	// Initialize the gRPC gateway to communicate with other services (e.g., stock)
 	gateway := gateway.NewGateway(registry)
 
-	store := NewStore(mongoClient)
+	// Initialize the layers of the application: Storage -> Business Logic -> Telemetry -> Logging
+	pgURI := common.EnvString("DB_URI", "postgres://postgres:password@localhost:5433/orders?sslmode=disable")
+	store, err := NewStore(pgURI)
+	if err != nil {
+		logger.Fatal("failed to connect to postgres", zap.Error(err))
+	}
 	svc := NewService(store, gateway)
 	svcWithTelemetry := NewTelemetryMiddleware(svc)
 	svcWithLogging := NewLoggingMiddleware(svcWithTelemetry)
 
+	// Register the gRPC handlers for the OrderService API
 	NewGRPCHandler(grpcServer, svcWithLogging, ch)
 
+	// Start the RabbitMQ consumer to listen for downstream events (like payment successes)
 	consumer := NewConsumer(svcWithLogging)
 	go consumer.Listen(ch)
 
-	logger.Info("Starting HTTP server", zap.String("port", grpcAddr))
+	logger.Info("Starting gRPC server", zap.String("port", grpcAddr))
 
-	if err := grpcServer.Serve(l); err != nil {
-		logger.Fatal("failed to serve", zap.Error(err))
-	}
-}
+	// Start the gRPC server in a goroutine
+	go func() {
+		if err := grpcServer.Serve(l); err != nil {
+			logger.Fatal("failed to serve", zap.Error(err))
+		}
+	}()
 
-func connectToMongoDB(uri string) (*mongo.Client, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
-	if err != nil {
-		return nil, err
-	}
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
 
-	err = client.Ping(ctx, readpref.Primary())
-	return client, err
+	logger.Info("Shutting down server...")
+	grpcServer.GracefulStop()
+	logger.Info("Server exiting")
 }

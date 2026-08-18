@@ -4,6 +4,10 @@ import (
 	"context"
 	"log"
 	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +18,8 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 
 	"github.com/jaydeepjr28/omsv2-payments/gateway"
+	"github.com/jaydeepjr28/omsv2-payments/processor"
+	"github.com/jaydeepjr28/omsv2-payments/processor/inmem"
 	"github.com/jaydeepjr28/omsv2-payments/processor/razorpay"
 	"google.golang.org/grpc"
 )
@@ -33,14 +39,23 @@ var (
 	razorpayItemPrices    = common.EnvString("RAZORPAY_ITEM_PRICES", "")
 	gatewayHTTPAddr       = common.EnvString("GATEWAY_HTTP_ADDRESS", "http://localhost:8080")
 	jaegerAddr            = common.EnvString("JAEGER_ADDR", "localhost:4318")
+	advertisedAddr        = common.EnvString("ADVERTISED_ADDR", "localhost:2001")
 )
 
 func main() {
+	// Initialize OpenTelemetry tracer
 	if err := common.SetGlobalTracer(context.TODO(), serviceName, jaegerAddr); err != nil {
 		log.Fatal("failed to set global tracer")
 	}
 
-	// Register consul
+	// Connect to the Postgres database used to log webhooks/payment events (mostly for auditing)
+	pgURI := common.EnvString("DB_URI", "postgres://postgres:password@localhost:5434/payments?sslmode=disable")
+	paymentStore, err := NewPaymentStore(pgURI)
+	if err != nil {
+		log.Fatalf("failed to connect to postgres: %v", err)
+	}
+
+	// Register this payment service with Consul
 	registry, err := consul.NewRegistry(consulAddr, serviceName)
 	if err != nil {
 		panic(err)
@@ -49,53 +64,67 @@ func main() {
 	instanceID := discovery.GenerateInstanceID(serviceName)
 
 	ctx := context.Background()
-	if err := registry.Register(ctx, instanceID, serviceName, grpcAddr); err != nil {
+	if err := registry.Register(ctx, instanceID, serviceName, advertisedAddr); err != nil {
 		panic(err)
 	}
 
 	go func() {
 		for {
 			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
-				log.Fatalf("failed to health check %v", err.Error())
+				log.Printf("failed to health check: %v", err)
 			}
 			time.Sleep(1 * time.Second)
 		}
 	}()
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
-	// Broker connection
+	// Connect to RabbitMQ to listen for OrderCreatedEvents
 	ch, close := broker.Connect(amqpUser, amqpPass, amqpHost, amqpPort)
 	defer func() {
 		close()
 		ch.Close()
 	}()
 
-	razorpayProcessor, err := razorpay.NewProcessor(razorpayKeyID, razorpayKeySecret, razorpayItemPrices, gatewayHTTPAddr)
-	if err != nil {
-		log.Fatalf("invalid Razorpay configuration: %v", err)
+	// Determine whether to use a real Razorpay processor or an in-memory mock based on the API key
+	var paymentProcessor processor.PaymentProcessor
+	if razorpayKeyID == "dummy_key" || razorpayKeyID == "" {
+		paymentProcessor = inmem.NewInmem()
+	} else {
+		var err error
+		paymentProcessor, err = razorpay.NewProcessor(razorpayKeyID, razorpayKeySecret, razorpayItemPrices, gatewayHTTPAddr)
+		if err != nil {
+			log.Fatalf("invalid Razorpay configuration: %v", err)
+		}
 	}
+	
+	// Set up the internal service logic wrapped with telemetry
 	gateway := gateway.NewGateway(registry)
-	svc := NewService(razorpayProcessor, gateway)
+	svc := NewService(paymentProcessor, gateway)
 	svcWithTelemetry := NewTelemetryMiddleware(svc)
 
+	// Start consuming AMQP messages (OrderCreatedEvent)
 	amqpConsumer := NewConsumer(svcWithTelemetry)
 	go amqpConsumer.Listen(ch)
 
-	// http server
+	// Start an HTTP server to receive Webhooks from the payment gateway (e.g. Razorpay payment success)
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 
-	httpServer := NewPaymentHTTPHandler(ch, razorpayWebhookSecret)
+	httpServer := NewPaymentHTTPHandler(ch, razorpayWebhookSecret, paymentStore)
 	httpServer.registerRoutes(router)
+
+	srv := &http.Server{
+		Addr:    httpAddr,
+		Handler: router,
+	}
 
 	go func() {
 		log.Printf("Starting HTTP server at %s", httpAddr)
-		if err := router.Run(httpAddr); err != nil {
-			log.Fatal("failed to start http server")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("failed to start http server: %v", err)
 		}
 	}()
 
-	// gRPC server
 	grpcServer := grpc.NewServer()
 
 	l, err := net.Listen("tcp", grpcAddr)
@@ -105,7 +134,24 @@ func main() {
 	defer l.Close()
 
 	log.Println("GRPC Server Started at ", grpcAddr)
-	if err := grpcServer.Serve(l); err != nil {
-		log.Fatal(err.Error())
+	go func() {
+		if err := grpcServer.Serve(l); err != nil {
+			log.Fatalf("failed to start grpc server: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down servers...")
+	grpcServer.GracefulStop()
+
+	ctxShutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctxShutdown); err != nil {
+		log.Printf("HTTP Server forced to shutdown: %v", err)
 	}
+
+	log.Println("Servers exited properly")
 }

@@ -23,6 +23,13 @@ func (s *TelemetryMiddleware) GetOrder(ctx context.Context, p *pb.GetOrderReques
 	return s.next.GetOrder(ctx, p)
 }
 
+func (s *TelemetryMiddleware) GetCustomerOrders(ctx context.Context, p *pb.GetCustomerOrdersRequest) (*pb.GetCustomerOrdersResponse, error) {
+	span := trace.SpanFromContext(ctx)
+	span.AddEvent(fmt.Sprintf("GetCustomerOrders: %v", p))
+
+	return s.next.GetCustomerOrders(ctx, p)
+}
+
 func (s *TelemetryMiddleware) UpdateOrder(ctx context.Context, o *pb.Order) (*pb.Order, error) {
 	span := trace.SpanFromContext(ctx)
 	span.AddEvent(fmt.Sprintf("UpdateOrder: %v", o))

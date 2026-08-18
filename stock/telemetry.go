@@ -29,3 +29,10 @@ func (s *TelemetryMiddleware) CheckIfItemAreInStock(ctx context.Context, p []*pb
 
 	return s.next.CheckIfItemAreInStock(ctx, p)
 }
+
+func (s *TelemetryMiddleware) DecrementItems(ctx context.Context, items []*pb.Item) error {
+	span := trace.SpanFromContext(ctx)
+	span.AddEvent(fmt.Sprintf("DecrementItems: %v", items))
+
+	return s.next.DecrementItems(ctx, items)
+}

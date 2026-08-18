@@ -1,0 +1,180 @@
+services:
+  jaeger:
+    image: "jaegertracing/all-in-one:latest"
+    ports:
+      - "16686:16686"
+      - "4318:4318"
+      
+  consul:
+    image: hashicorp/consul
+    command: agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
+    ports:
+      - 8500:8500
+      - 8600:8600/udp
+      
+  rabbitmq:
+    image: "rabbitmq:3-management"
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+      
+  gateway-postgres:
+    image: "postgres:15-alpine"
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DEV_GATEWAY_POSTGRES_PASSWORD}
+      POSTGRES_DB: gateway
+    ports:
+      - "5432:5432"
+
+  orders-postgres:
+    image: "postgres:15-alpine"
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DEV_ORDERS_POSTGRES_PASSWORD}
+      POSTGRES_DB: orders
+    ports:
+      - "5433:5432"
+
+  payments-postgres:
+    image: "postgres:15-alpine"
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DEV_PAYMENTS_POSTGRES_PASSWORD}
+      POSTGRES_DB: payments
+    ports:
+      - "5434:5432"
+
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
+
+  gateway:
+    build:
+      context: .
+      args:
+        SERVICE: gateway
+    environment:
+      - ADVERTISED_ADDR=gateway:8080
+      - CONSUL_ADDR=consul:8500
+      - JAEGER_ADDR=jaeger:4318
+      - GATEWAY_HTTP_ADDRESS=http://localhost:8080
+      - DB_URI=postgres://postgres:${DEV_GATEWAY_POSTGRES_PASSWORD}@gateway-postgres:5432/gateway?sslmode=disable
+      - RABBITMQ_HOST=rabbitmq
+    ports:
+      - "8080:8080"
+    restart: always
+    depends_on:
+      - consul
+      - jaeger
+      - gateway-postgres
+      - rabbitmq
+
+  orders:
+    build:
+      context: .
+      args:
+        SERVICE: orders
+    environment:
+      - ADVERTISED_ADDR=orders:2000
+      - GRPC_ADDR=:2000
+      - CONSUL_ADDR=consul:8500
+      - JAEGER_ADDR=jaeger:4318
+      - RABBITMQ_HOST=rabbitmq
+      - DB_URI=postgres://postgres:${DEV_ORDERS_POSTGRES_PASSWORD}@orders-postgres:5432/orders?sslmode=disable
+    restart: always
+    depends_on:
+      - consul
+      - rabbitmq
+      - orders-postgres
+
+  payments:
+    build:
+      context: .
+      args:
+        SERVICE: payments
+    environment:
+      - ADVERTISED_ADDR=payments:2001
+      - GRPC_ADDRESS=:2001
+      - CONSUL_ADDR=consul:8500
+      - JAEGER_ADDR=jaeger:4318
+      - RABBITMQ_HOST=rabbitmq
+      - DB_URI=postgres://postgres:${DEV_PAYMENTS_POSTGRES_PASSWORD}@payments-postgres:5432/payments?sslmode=disable
+      - GATEWAY_HTTP_ADDRESS=http://localhost:5173
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET}
+      - RAZORPAY_ITEM_PRICES={"1":19900,"2":9900}
+    restart: always
+    depends_on:
+      - consul
+      - rabbitmq
+      - payments-postgres
+
+  stock:
+    build:
+      context: .
+      args:
+        SERVICE: stock
+    environment:
+      - ADVERTISED_ADDR=stock:2002
+      - GRPC_ADDR=:2002
+      - CONSUL_ADDR=consul:8500
+      - JAEGER_ADDR=jaeger:4318
+      - RABBITMQ_HOST=rabbitmq
+    restart: always
+    depends_on:
+      - consul
+      - rabbitmq
+
+  kitchen:
+    build:
+      context: .
+      args:
+        SERVICE: kitchen
+    environment:
+      - ADVERTISED_ADDR=kitchen:2003
+      - GRPC_ADDR=:2003
+      - CONSUL_ADDR=consul:8500
+      - JAEGER_ADDR=jaeger:4318
+      - RABBITMQ_HOST=rabbitmq
+    restart: always
+    depends_on:
+      - consul
+      - rabbitmq
+
+
+  cart:
+    build:
+      context: .
+      args:
+        SERVICE: cart
+    environment:
+      - ADVERTISED_ADDR=cart:2005
+      - GRPC_ADDR=:2005
+      - CONSUL_ADDR=consul:8500
+      - JAEGER_ADDR=jaeger:4318
+      - REDIS_ADDR=redis:6379
+    restart: always
+    depends_on:
+      - consul
+      - redis
+
+  notification:
+    build:
+      context: .
+      args:
+        SERVICE: notification
+    environment:
+      - ADVERTISED_ADDR=notification:2006
+      - CONSUL_ADDR=consul:8500
+      - JAEGER_ADDR=jaeger:4318
+      - RABBITMQ_HOST=rabbitmq
+    restart: always
+    depends_on:
+      - consul
+      - rabbitmq

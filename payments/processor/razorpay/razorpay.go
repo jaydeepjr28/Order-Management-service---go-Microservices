@@ -14,11 +14,12 @@ import (
 
 const paymentLinksURL = "https://api.razorpay.com/v1/payment_links"
 
+// Processor implements the PaymentProcessor interface using the real Razorpay Payment Links API.
 type Processor struct {
 	keyID       string
 	keySecret   string
-	itemPrices  map[string]int64
-	callbackURL string
+	itemPrices  map[string]int64 // Prices are hardcoded here or supplied via env vars (in paise)
+	callbackURL string           // Where Razorpay should redirect the user after payment
 	httpClient  *http.Client
 }
 
@@ -36,6 +37,7 @@ type paymentLinkResponse struct {
 	ShortURL string `json:"short_url"`
 }
 
+// NewProcessor validates API keys and item prices, and initializes the HTTP client for Razorpay.
 func NewProcessor(keyID, keySecret, itemPricesJSON, gatewayHTTPAddr string) (*Processor, error) {
 	if keyID == "" || keySecret == "" {
 		return nil, fmt.Errorf("RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET are required")
@@ -48,6 +50,7 @@ func NewProcessor(keyID, keySecret, itemPricesJSON, gatewayHTTPAddr string) (*Pr
 	if len(prices) == 0 {
 		return nil, fmt.Errorf("RAZORPAY_ITEM_PRICES must define at least one item price")
 	}
+	// Razorpay requires amounts to be at least 1 INR (100 paise)
 	for itemID, price := range prices {
 		if itemID == "" || price < 100 {
 			return nil, fmt.Errorf("invalid price for item %q: amount must be at least 100 paise", itemID)
@@ -63,17 +66,20 @@ func NewProcessor(keyID, keySecret, itemPricesJSON, gatewayHTTPAddr string) (*Pr
 	}, nil
 }
 
+// CreatePaymentLink calculates the order total and calls the Razorpay API to generate a hosted checkout URL.
 func (p *Processor) CreatePaymentLink(order *pb.Order) (string, error) {
 	amount, description, err := p.orderTotal(order)
 	if err != nil {
 		return "", err
 	}
 
+	// Construct the payload for the Razorpay Payment Links API
 	payload, err := json.Marshal(paymentLinkRequest{
 		Amount:         amount,
-		Currency:       "INR",
-		ReferenceID:    order.ID,
+		Currency:       "INR", // Indian Rupees
+		ReferenceID:    fmt.Sprintf("%s_%d", order.ID, time.Now().Unix()),
 		Description:    description,
+		// Razorpay will redirect to this URL on successful payment
 		CallbackURL:    fmt.Sprintf("%s?customerID=%s&orderID=%s", p.callbackURL, order.CustomerID, order.ID),
 		CallbackMethod: "get",
 		Notes: map[string]string{

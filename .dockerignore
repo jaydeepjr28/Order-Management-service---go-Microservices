@@ -1,0 +1,9 @@
+.git
+.cache
+**/bin
+**/*.exe
+**/payments_main
+**/.env*
+frontend/node_modules
+frontend/dist
+build-errors.log

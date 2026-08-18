@@ -10,7 +10,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,7 +22,7 @@ import (
 type PaymentHTTPHandler struct {
 	channel       *amqp.Channel
 	webhookSecret string
-	processed     sync.Map
+	store         PaymentStore
 }
 
 type razorpayWebhook struct {
@@ -38,8 +37,8 @@ type razorpayWebhook struct {
 	} `json:"payload"`
 }
 
-func NewPaymentHTTPHandler(channel *amqp.Channel, webhookSecret string) *PaymentHTTPHandler {
-	return &PaymentHTTPHandler{channel: channel, webhookSecret: webhookSecret}
+func NewPaymentHTTPHandler(channel *amqp.Channel, webhookSecret string, store PaymentStore) *PaymentHTTPHandler {
+	return &PaymentHTTPHandler{channel: channel, webhookSecret: webhookSecret, store: store}
 }
 
 func (h *PaymentHTTPHandler) registerRoutes(router *gin.Engine) {
@@ -65,7 +64,8 @@ func (h *PaymentHTTPHandler) handlePaymentWebhook(c *gin.Context) {
 
 	eventID := c.GetHeader("x-razorpay-event-id")
 	if eventID != "" {
-		if _, duplicate := h.processed.Load(eventID); duplicate {
+		has, err := h.store.HasEvent(c.Request.Context(), eventID)
+		if err == nil && has {
 			c.Status(http.StatusOK)
 			return
 		}
@@ -81,7 +81,7 @@ func (h *PaymentHTTPHandler) handlePaymentWebhook(c *gin.Context) {
 		return
 	}
 
-	orderID := event.Payload.PaymentLink.Entity.ReferenceID
+	orderID := event.Payload.PaymentLink.Entity.Notes["order_id"]
 	customerID := event.Payload.PaymentLink.Entity.Notes["customer_id"]
 	if orderID == "" || customerID == "" {
 		log.Printf("Razorpay payment link webhook missing order or customer ID")
@@ -97,7 +97,7 @@ func (h *PaymentHTTPHandler) handlePaymentWebhook(c *gin.Context) {
 		return
 	}
 	if eventID != "" {
-		h.processed.Store(eventID, struct{}{})
+		_ = h.store.SaveEvent(c.Request.Context(), eventID)
 	}
 
 	log.Printf("Razorpay payment received for order %s", orderID)

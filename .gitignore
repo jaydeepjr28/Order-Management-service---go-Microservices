@@ -1,2 +1,5 @@
+*/tmp/
+build-errors.log
+frontend/
 .env
 .cache/
