@@ -23,7 +23,7 @@ func (g *Gateway) GetOrder(ctx context.Context, orderID, customerID string) (*pb
 
 	client := pb.NewOrderServiceClient(conn)
 	return client.GetOrder(ctx, &pb.GetOrderRequest{
-		OrderID:    orderID,
-		CustomerID: customerID,
+		OrderID:	orderID,
+		CustomerID:	customerID,
 	})
 }

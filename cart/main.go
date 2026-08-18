@@ -14,21 +14,20 @@ import (
 )
 
 var (
-	serviceName    = "cart"
-	grpcAddr       = common.EnvString("GRPC_ADDR", "localhost:2005")
-	consulAddr     = common.EnvString("CONSUL_ADDR", "localhost:8500")
-	jaegerAddr     = common.EnvString("JAEGER_ADDR", "localhost:4318")
-	redisAddr      = common.EnvString("REDIS_ADDR", "localhost:6379")
-	advertisedAddr = common.EnvString("ADVERTISED_ADDR", "localhost:2005")
+	serviceName	= "cart"
+	grpcAddr	= common.EnvString("GRPC_ADDR", "localhost:2005")
+	consulAddr	= common.EnvString("CONSUL_ADDR", "localhost:8500")
+	jaegerAddr	= common.EnvString("JAEGER_ADDR", "localhost:4318")
+	redisAddr	= common.EnvString("REDIS_ADDR", "localhost:6379")
+	advertisedAddr	= common.EnvString("ADVERTISED_ADDR", "localhost:2005")
 )
 
 func main() {
-	// Initialize OpenTelemetry tracer
+
 	if err := common.SetGlobalTracer(context.TODO(), serviceName, jaegerAddr); err != nil {
 		log.Printf("failed to set global tracer: %v", err)
 	}
 
-	// Register this cart service with Consul for service discovery
 	registry, err := consul.NewRegistry(consulAddr, serviceName)
 	if err != nil {
 		panic(err)
@@ -41,7 +40,6 @@ func main() {
 	}
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
-	// Periodically ping Consul to stay registered as healthy
 	go func() {
 		for {
 			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
@@ -59,7 +57,6 @@ func main() {
 	}
 	defer l.Close()
 
-	// Initialize the Redis store and bind it to the gRPC handler
 	store := NewRedisStore(redisAddr)
 	NewGRPCHandler(grpcServer, store)
 

@@ -10,7 +10,6 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// store encapsulates the PostgreSQL client for the Orders service.
 type store struct {
 	db *sql.DB
 }
@@ -43,7 +42,6 @@ func NewStore(uri string) (*store, error) {
 	return &store{db: db}, nil
 }
 
-// Create inserts a new order document into Postgres and returns its generated ID.
 func (s *store) Create(ctx context.Context, o Order) (string, error) {
 	itemsJSON, err := json.Marshal(o.Items)
 	if err != nil {
@@ -56,7 +54,6 @@ func (s *store) Create(ctx context.Context, o Order) (string, error) {
 	return id, err
 }
 
-// Get fetches a specific order by its ID, ensuring it belongs to the given customerID.
 func (s *store) Get(ctx context.Context, id, customerID string) (*Order, error) {
 	var o Order
 	var itemsJSON []byte
@@ -74,14 +71,12 @@ func (s *store) Get(ctx context.Context, id, customerID string) (*Order, error) 
 	return &o, nil
 }
 
-// Update modifies specific fields (PaymentLink and Status) of an existing order.
 func (s *store) Update(ctx context.Context, id string, newOrder *pb.Order) error {
 	query := `UPDATE orders SET payment_link = $1, status = $2 WHERE id = $3`
 	_, err := s.db.ExecContext(ctx, query, newOrder.PaymentLink, newOrder.Status, id)
 	return err
 }
 
-// GetByCustomer fetches all orders belonging to a specific customer.
 func (s *store) GetByCustomer(ctx context.Context, customerID string) ([]*Order, error) {
 	query := `SELECT id, customer_id, status, payment_link, items FROM orders WHERE customer_id = $1 ORDER BY id DESC`
 	rows, err := s.db.QueryContext(ctx, query, customerID)

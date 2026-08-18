@@ -25,37 +25,35 @@ import (
 )
 
 var (
-	serviceName           = "payment"
-	amqpUser              = common.EnvString("RABBITMQ_USER", "guest")
-	amqpPass              = common.EnvString("RABBITMQ_PASS", "guest")
-	amqpHost              = common.EnvString("RABBITMQ_HOST", "localhost")
-	amqpPort              = common.EnvString("RABBITMQ_PORT", "5672")
-	grpcAddr              = common.EnvString("GRPC_ADDRESS", "localhost:2001")
-	consulAddr            = common.EnvString("CONSUL_ADDR", "localhost:8500")
-	httpAddr              = common.EnvString("HTTP_ADDR", "localhost:8081")
-	razorpayKeyID         = common.EnvString("RAZORPAY_KEY_ID", "")
-	razorpayKeySecret     = common.EnvString("RAZORPAY_KEY_SECRET", "")
-	razorpayWebhookSecret = common.EnvString("RAZORPAY_WEBHOOK_SECRET", "")
-	razorpayItemPrices    = common.EnvString("RAZORPAY_ITEM_PRICES", "")
-	gatewayHTTPAddr       = common.EnvString("GATEWAY_HTTP_ADDRESS", "http://localhost:8080")
-	jaegerAddr            = common.EnvString("JAEGER_ADDR", "localhost:4318")
-	advertisedAddr        = common.EnvString("ADVERTISED_ADDR", "localhost:2001")
+	serviceName		= "payment"
+	amqpUser		= common.EnvString("RABBITMQ_USER", "guest")
+	amqpPass		= common.EnvString("RABBITMQ_PASS", "guest")
+	amqpHost		= common.EnvString("RABBITMQ_HOST", "localhost")
+	amqpPort		= common.EnvString("RABBITMQ_PORT", "5672")
+	grpcAddr		= common.EnvString("GRPC_ADDRESS", "localhost:2001")
+	consulAddr		= common.EnvString("CONSUL_ADDR", "localhost:8500")
+	httpAddr		= common.EnvString("HTTP_ADDR", "localhost:8081")
+	razorpayKeyID		= common.EnvString("RAZORPAY_KEY_ID", "")
+	razorpayKeySecret	= common.EnvString("RAZORPAY_KEY_SECRET", "")
+	razorpayWebhookSecret	= common.EnvString("RAZORPAY_WEBHOOK_SECRET", "")
+	razorpayItemPrices	= common.EnvString("RAZORPAY_ITEM_PRICES", "")
+	gatewayHTTPAddr		= common.EnvString("GATEWAY_HTTP_ADDRESS", "http://localhost:8080")
+	jaegerAddr		= common.EnvString("JAEGER_ADDR", "localhost:4318")
+	advertisedAddr		= common.EnvString("ADVERTISED_ADDR", "localhost:2001")
 )
 
 func main() {
-	// Initialize OpenTelemetry tracer
+
 	if err := common.SetGlobalTracer(context.TODO(), serviceName, jaegerAddr); err != nil {
 		log.Fatal("failed to set global tracer")
 	}
 
-	// Connect to the Postgres database used to log webhooks/payment events (mostly for auditing)
 	pgURI := common.EnvString("DB_URI", "postgres://postgres:password@localhost:5434/payments?sslmode=disable")
 	paymentStore, err := NewPaymentStore(pgURI)
 	if err != nil {
 		log.Fatalf("failed to connect to postgres: %v", err)
 	}
 
-	// Register this payment service with Consul
 	registry, err := consul.NewRegistry(consulAddr, serviceName)
 	if err != nil {
 		panic(err)
@@ -78,14 +76,12 @@ func main() {
 	}()
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
-	// Connect to RabbitMQ to listen for OrderCreatedEvents
 	ch, close := broker.Connect(amqpUser, amqpPass, amqpHost, amqpPort)
 	defer func() {
 		close()
 		ch.Close()
 	}()
 
-	// Determine whether to use a real Razorpay processor or an in-memory mock based on the API key
 	var paymentProcessor processor.PaymentProcessor
 	if razorpayKeyID == "dummy_key" || razorpayKeyID == "" {
 		paymentProcessor = inmem.NewInmem()
@@ -96,17 +92,14 @@ func main() {
 			log.Fatalf("invalid Razorpay configuration: %v", err)
 		}
 	}
-	
-	// Set up the internal service logic wrapped with telemetry
+
 	gateway := gateway.NewGateway(registry)
 	svc := NewService(paymentProcessor, gateway)
 	svcWithTelemetry := NewTelemetryMiddleware(svc)
 
-	// Start consuming AMQP messages (OrderCreatedEvent)
 	amqpConsumer := NewConsumer(svcWithTelemetry)
 	go amqpConsumer.Listen(ch)
 
-	// Start an HTTP server to receive Webhooks from the payment gateway (e.g. Razorpay payment success)
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 
@@ -114,8 +107,8 @@ func main() {
 	httpServer.registerRoutes(router)
 
 	srv := &http.Server{
-		Addr:    httpAddr,
-		Handler: router,
+		Addr:		httpAddr,
+		Handler:	router,
 	}
 
 	go func() {

@@ -22,19 +22,19 @@ type OrdersStore interface {
 }
 
 type Order struct {
-	ID          string     `json:"id"`
-	CustomerID  string     `json:"customerID"`
-	Status      string     `json:"status"`
-	PaymentLink string     `json:"paymentLink"`
-	Items       []*pb.Item `json:"items"`
+	ID		string		`json:"id"`
+	CustomerID	string		`json:"customerID"`
+	Status		string		`json:"status"`
+	PaymentLink	string		`json:"paymentLink"`
+	Items		[]*pb.Item	`json:"items"`
 }
 
 func (o *Order) ToProto() *pb.Order {
 	return &pb.Order{
-		ID:          o.ID,
-		CustomerID:  o.CustomerID,
-		Status:      o.Status,
-		PaymentLink: o.PaymentLink,
-		Items:       o.Items,
+		ID:		o.ID,
+		CustomerID:	o.CustomerID,
+		Status:		o.Status,
+		PaymentLink:	o.PaymentLink,
+		Items:		o.Items,
 	}
 }

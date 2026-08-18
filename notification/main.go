@@ -11,20 +11,19 @@ import (
 )
 
 var (
-	serviceName    = "notification"
-	consulAddr     = common.EnvString("CONSUL_ADDR", "localhost:8500")
-	jaegerAddr     = common.EnvString("JAEGER_ADDR", "localhost:4318")
-	rabbitmqAddr   = common.EnvString("RABBITMQ_HOST", "localhost:5672")
-	advertisedAddr = common.EnvString("ADVERTISED_ADDR", "localhost:2006")
+	serviceName	= "notification"
+	consulAddr	= common.EnvString("CONSUL_ADDR", "localhost:8500")
+	jaegerAddr	= common.EnvString("JAEGER_ADDR", "localhost:4318")
+	rabbitmqAddr	= common.EnvString("RABBITMQ_HOST", "localhost:5672")
+	advertisedAddr	= common.EnvString("ADVERTISED_ADDR", "localhost:2006")
 )
 
 func main() {
-	// Initialize OpenTelemetry tracer
+
 	if err := common.SetGlobalTracer(context.TODO(), serviceName, jaegerAddr); err != nil {
 		log.Printf("failed to set global tracer: %v", err)
 	}
 
-	// Register this notification service with Consul
 	registry, err := consul.NewRegistry(consulAddr, serviceName)
 	if err != nil {
 		panic(err)
@@ -37,7 +36,6 @@ func main() {
 	}
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
-	// Initialize the AMQP consumer to listen for various system events
 	consumer, err := NewConsumer(rabbitmqAddr)
 	if err != nil {
 		log.Fatalf("failed to create consumer: %v", err)
@@ -48,6 +46,5 @@ func main() {
 
 	go consumer.Listen()
 
-	// Block forever since we don't have an HTTP/gRPC server
 	select {}
 }

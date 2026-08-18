@@ -25,9 +25,9 @@ func (g *gateway) UpdateOrderAfterPaymentLink(ctx context.Context, orderID, paym
 	ordersClient := pb.NewOrderServiceClient(conn)
 
 	_, err = ordersClient.UpdateOrder(ctx, &pb.Order{
-		ID:          orderID,
-		Status:      "waiting_payment",
-		PaymentLink: paymentLink,
+		ID:		orderID,
+		Status:		"waiting_payment",
+		PaymentLink:	paymentLink,
 	})
 	return err
 }

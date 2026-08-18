@@ -10,8 +10,8 @@ import (
 )
 
 type fakeOrdersGateway struct {
-	orderID     string
-	paymentLink string
+	orderID		string
+	paymentLink	string
 }
 
 func (g *fakeOrdersGateway) UpdateOrderAfterPaymentLink(_ context.Context, orderID, paymentLink string) error {

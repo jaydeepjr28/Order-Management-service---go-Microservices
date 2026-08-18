@@ -9,12 +9,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// store encapsulates the PostgreSQL database used to save and retrieve user records.
 type store struct {
 	db *sql.DB
 }
 
-// NewStore connects to the PostgreSQL instance and initializes the 'users' table.
 func NewStore(uri string) (*store, error) {
 	db, err := sql.Open("postgres", uri)
 	if err != nil {
@@ -28,7 +26,6 @@ func NewStore(uri string) (*store, error) {
 		return nil, err
 	}
 
-	// Initialize table
 	query := `
 	CREATE TABLE IF NOT EXISTS users (
 		id SERIAL PRIMARY KEY,
@@ -43,15 +40,13 @@ func NewStore(uri string) (*store, error) {
 	return &store{db: db}, nil
 }
 
-// UserModel represents a user record.
 type UserModel struct {
-	ID       string `json:"id"`
-	Email    string `json:"email"`
-	Password string `json:"-"`
-	Name     string `json:"name"`
+	ID		string	`json:"id"`
+	Email		string	`json:"email"`
+	Password	string	`json:"-"`
+	Name		string	`json:"name"`
 }
 
-// CreateUser hashes the user's password using bcrypt and then inserts the user record.
 func (s *store) CreateUser(ctx context.Context, u *UserModel) error {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -69,7 +64,6 @@ func (s *store) CreateUser(ctx context.Context, u *UserModel) error {
 	return nil
 }
 
-// GetUserByEmail searches for a user matching the provided email address.
 func (s *store) GetUserByEmail(ctx context.Context, email string) (*UserModel, error) {
 	var user UserModel
 	query := `SELECT id, email, password, name FROM users WHERE email = $1`
@@ -80,7 +74,6 @@ func (s *store) GetUserByEmail(ctx context.Context, email string) (*UserModel, e
 	return &user, nil
 }
 
-// VerifyPassword securely compares a plain text password attempt against the stored bcrypt hash.
 func (s *store) VerifyPassword(hashedPassword, password string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
 }

@@ -8,30 +8,30 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/joho/godotenv/autoload"
 	common "github.com/jaydeepjr28/commons"
 	"github.com/jaydeepjr28/commons/broker"
 	"github.com/jaydeepjr28/commons/discovery"
 	"github.com/jaydeepjr28/commons/discovery/consul"
 	"github.com/jaydeepjr28/omsv2-kitchen/gateway"
+	_ "github.com/joho/godotenv/autoload"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
 var (
-	serviceName = "kitchen"
-	grpcAddr    = common.EnvString("GRPC_ADDR", "localhost:2003")
-	consulAddr  = common.EnvString("CONSUL_ADDR", "localhost:8500")
-	amqpUser    = common.EnvString("RABBITMQ_USER", "guest")
-	amqpPass    = common.EnvString("RABBITMQ_PASS", "guest")
-	amqpHost    = common.EnvString("RABBITMQ_HOST", "localhost")
-	amqpPort       = common.EnvString("RABBITMQ_PORT", "5672")
-	jaegerAddr     = common.EnvString("JAEGER_ADDR", "localhost:4318")
-	advertisedAddr = common.EnvString("ADVERTISED_ADDR", "localhost:2003")
+	serviceName	= "kitchen"
+	grpcAddr	= common.EnvString("GRPC_ADDR", "localhost:2003")
+	consulAddr	= common.EnvString("CONSUL_ADDR", "localhost:8500")
+	amqpUser	= common.EnvString("RABBITMQ_USER", "guest")
+	amqpPass	= common.EnvString("RABBITMQ_PASS", "guest")
+	amqpHost	= common.EnvString("RABBITMQ_HOST", "localhost")
+	amqpPort	= common.EnvString("RABBITMQ_PORT", "5672")
+	jaegerAddr	= common.EnvString("JAEGER_ADDR", "localhost:4318")
+	advertisedAddr	= common.EnvString("ADVERTISED_ADDR", "localhost:2003")
 )
 
 func main() {
-	// Initialize structured logging using Zap
+
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
@@ -41,7 +41,6 @@ func main() {
 		logger.Fatal("could set global tracer", zap.Error(err))
 	}
 
-	// Register this kitchen service with Consul for service discovery
 	registry, err := consul.NewRegistry(consulAddr, serviceName)
 	if err != nil {
 		panic(err)
@@ -53,7 +52,6 @@ func main() {
 		panic(err)
 	}
 
-	// Periodically ping Consul to stay registered as healthy
 	go func() {
 		for {
 			if err := registry.HealthCheck(instanceID, serviceName); err != nil {
@@ -65,15 +63,12 @@ func main() {
 
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
-	// Connect to RabbitMQ to listen for OrderPaidEvents
 	ch, close := broker.Connect(amqpUser, amqpPass, amqpHost, amqpPort)
 	defer func() {
 		close()
 		ch.Close()
 	}()
 
-	// Note: Kitchen doesn't actually expose any gRPC endpoints currently,
-	// it only acts as a sink for AMQP events. The grpcServer is mostly boilerplate here.
 	grpcServer := grpc.NewServer()
 
 	l, err := net.Listen("tcp", grpcAddr)
@@ -82,10 +77,8 @@ func main() {
 	}
 	defer l.Close()
 
-	// Initialize the gRPC gateway to communicate with downstream services (Orders)
 	gateway := gateway.New(registry)
 
-	// Start consuming AMQP messages (OrderPaidEvent)
 	consumer := NewConsumer(gateway)
 	go consumer.Listen(ch)
 

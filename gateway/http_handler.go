@@ -13,32 +13,26 @@ import (
 	pb "github.com/jaydeepjr28/commons/api"
 	"github.com/jaydeepjr28/commons/auth"
 	"github.com/jaydeepjr28/commons/broker"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/jaydeepjr28/omsv2-gateway/gateway"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"go.opentelemetry.io/otel"
 	otelCodes "go.opentelemetry.io/otel/codes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-// handler holds all the dependencies required to process HTTP requests.
-// It acts as the API gateway, routing requests to the appropriate downstream gRPC services
-// (like Orders or Cart) or handling them locally (like User Auth using MongoDB).
 type handler struct {
-	ordersGateway gateway.OrdersGateway
-	store         *store
-	cartGateway   gateway.CartGateway
-	publicURL     string
-	channel       *amqp.Channel
+	ordersGateway	gateway.OrdersGateway
+	store		*store
+	cartGateway	gateway.CartGateway
+	publicURL	string
+	channel		*amqp.Channel
 }
 
-// NewHandler creates a new HTTP handler with all required microservice clients and local store.
 func NewHandler(orders gateway.OrdersGateway, store *store, cart gateway.CartGateway, publicURL string, channel *amqp.Channel) *handler {
 	return &handler{ordersGateway: orders, store: store, cartGateway: cart, publicURL: publicURL, channel: channel}
 }
 
-// writeGRPCError translates gRPC status codes from downstream services into standard HTTP status codes
-// so the frontend client receives a standardized REST-like error response.
 func writeGRPCError(w http.ResponseWriter, err error) {
 	st := status.Convert(err)
 	switch st.Code() {
@@ -53,9 +47,6 @@ func writeGRPCError(w http.ResponseWriter, err error) {
 	}
 }
 
-// authMiddleware is a Gin middleware that intercepts incoming requests,
-// extracts the Bearer JWT token from the Authorization header, validates it,
-// and injects the authenticated customerID into the request context.
 func authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -70,14 +61,12 @@ func authMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Validate token against our symmetric secret
 		customerID, err := auth.ValidateToken(parts[1])
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
 			return
 		}
 
-		// Attach the customerID to the Gin context so downstream handlers can access it securely
 		c.Set("customerID", customerID)
 		c.Next()
 	}
@@ -104,8 +93,6 @@ func (h *handler) registerRoutes(router *gin.Engine) {
 
 }
 
-
-// handleRegister creates a new user account in MongoDB and issues an initial JWT token.
 func (h *handler) handleRegister(c *gin.Context) {
 	var req pb.RegisterRequest
 	if err := common.ReadJSON(c.Request, &req); err != nil {
@@ -114,9 +101,9 @@ func (h *handler) handleRegister(c *gin.Context) {
 	}
 
 	u := &UserModel{
-		Email:    req.Email,
-		Password: req.Password, // Note: Store handles hashing the password before saving
-		Name:     req.Name,
+		Email:		req.Email,
+		Password:	req.Password,
+		Name:		req.Name,
 	}
 
 	if err := h.store.CreateUser(c.Request.Context(), u); err != nil {
@@ -124,7 +111,6 @@ func (h *handler) handleRegister(c *gin.Context) {
 		return
 	}
 
-	// Issue a 24-hour token for the new user
 	token, err := auth.GenerateToken(u.Email, 24*time.Hour)
 	if err != nil {
 		common.WriteError(c.Writer, http.StatusInternalServerError, err.Error())
@@ -132,23 +118,22 @@ func (h *handler) handleRegister(c *gin.Context) {
 	}
 
 	res := &pb.AuthResponse{
-		Token:      token,
-		CustomerID: u.Email,
+		Token:		token,
+		CustomerID:	u.Email,
 	}
 
-	// Publish UserRegisteredEvent
 	if h.channel != nil {
 		tr := otel.Tracer("amqp")
 		amqpCtx, span := tr.Start(c.Request.Context(), fmt.Sprintf("AMQP - publish - %s", broker.UserRegisteredEvent))
 		headers := broker.InjectAMQPHeaders(amqpCtx)
-		
-		body, _ := json.Marshal(res) // Send AuthResponse as event payload
-		
+
+		body, _ := json.Marshal(res)
+
 		h.channel.PublishWithContext(amqpCtx, broker.UserRegisteredEvent, "", false, false, amqp.Publishing{
-			ContentType:  "application/json",
-			Body:         body,
-			DeliveryMode: amqp.Persistent,
-			Headers:      headers,
+			ContentType:	"application/json",
+			Body:		body,
+			DeliveryMode:	amqp.Persistent,
+			Headers:	headers,
 		})
 		span.End()
 	}
@@ -156,7 +141,6 @@ func (h *handler) handleRegister(c *gin.Context) {
 	common.WriteJSON(c.Writer, http.StatusOK, res)
 }
 
-// handleLogin verifies user credentials against the MongoDB database and returns a JWT token.
 func (h *handler) handleLogin(c *gin.Context) {
 	var req pb.LoginRequest
 	if err := common.ReadJSON(c.Request, &req); err != nil {
@@ -170,7 +154,6 @@ func (h *handler) handleLogin(c *gin.Context) {
 		return
 	}
 
-	// Compare the provided plain text password with the bcrypt hash stored in the DB
 	if err := h.store.VerifyPassword(u.Password, req.Password); err != nil {
 		common.WriteError(c.Writer, http.StatusUnauthorized, "invalid credentials")
 		return
@@ -183,16 +166,14 @@ func (h *handler) handleLogin(c *gin.Context) {
 	}
 
 	res := &pb.AuthResponse{
-		Token:      token,
-		CustomerID: u.Email,
+		Token:		token,
+		CustomerID:	u.Email,
 	}
 	common.WriteJSON(c.Writer, http.StatusOK, res)
 }
 
-
-// handleGetCart retrieves the current state of a user's shopping cart from the downstream Cart service.
 func (h *handler) handleGetCart(c *gin.Context) {
-	// Extract the securely verified customerID from the context (injected by authMiddleware)
+
 	customerID := c.GetString("customerID")
 	res, err := h.cartGateway.GetCart(c.Request.Context(), &pb.GetCartRequest{CustomerID: customerID})
 	if err != nil {
@@ -211,8 +192,8 @@ func (h *handler) handleAddToCart(c *gin.Context) {
 	}
 
 	res, err := h.cartGateway.AddItem(c.Request.Context(), &pb.AddItemRequest{
-		CustomerID: customerID,
-		Item:       &item,
+		CustomerID:	customerID,
+		Item:		&item,
 	})
 	if err != nil {
 		writeGRPCError(c.Writer, err)
@@ -226,8 +207,8 @@ func (h *handler) handleRemoveFromCart(c *gin.Context) {
 	productID := c.Param("productID")
 
 	res, err := h.cartGateway.RemoveItem(c.Request.Context(), &pb.RemoveItemRequest{
-		CustomerID: customerID,
-		ProductID:  productID,
+		CustomerID:	customerID,
+		ProductID:	productID,
 	})
 	if err != nil {
 		writeGRPCError(c.Writer, err)
@@ -246,18 +227,15 @@ func (h *handler) handleClearCart(c *gin.Context) {
 	common.WriteJSON(c.Writer, http.StatusOK, res)
 }
 
-// handleGetOrder fetches the details of a specific order.
 func (h *handler) handleGetOrder(c *gin.Context) {
 	customerID := c.Param("customerID")
 	orderID := c.Param("orderID")
 
-	// Security Check: Users can only request their own orders
 	if customerID != c.GetString("customerID") {
 		common.WriteError(c.Writer, http.StatusForbidden, "not allowed to access this order")
 		return
 	}
 
-	// Start a trace span for distributed tracing through the gRPC call
 	tr := otel.Tracer("http")
 	ctx, span := tr.Start(c.Request.Context(), fmt.Sprintf("%s %s", c.Request.Method, c.Request.RequestURI))
 	defer span.End()
@@ -272,7 +250,6 @@ func (h *handler) handleGetOrder(c *gin.Context) {
 	common.WriteJSON(c.Writer, http.StatusOK, o)
 }
 
-// handleGetCustomerOrders fetches all orders for a specific customer.
 func (h *handler) handleGetCustomerOrders(c *gin.Context) {
 	customerID := c.Param("customerID")
 
@@ -333,13 +310,9 @@ func (h *handler) handleGetInventory(c *gin.Context) {
 	common.WriteJSON(c.Writer, http.StatusOK, items)
 }
 
-
-// handleCreateOrder processes a checkout request.
-// It proxies the request to the downstream Orders service via gRPC.
 func (h *handler) handleCreateOrder(c *gin.Context) {
 	customerID := c.Param("customerID")
 
-	// Ensure the user is only submitting orders for their own account
 	if customerID != c.GetString("customerID") {
 		common.WriteError(c.Writer, http.StatusForbidden, "not allowed to access this order")
 		return
@@ -351,7 +324,6 @@ func (h *handler) handleCreateOrder(c *gin.Context) {
 		return
 	}
 
-	// Ensure the order has valid items and quantities before submitting to backend
 	if err := validateItems(items); err != nil {
 		common.WriteError(c.Writer, http.StatusBadRequest, err.Error())
 		return
@@ -361,11 +333,9 @@ func (h *handler) handleCreateOrder(c *gin.Context) {
 	ctx, span := tr.Start(c.Request.Context(), fmt.Sprintf("%s %s", c.Request.Method, c.Request.RequestURI))
 	defer span.End()
 
-	// Call the remote Order service over gRPC. 
-	// This service will internally check stock, reserve it, and return a payment link.
 	o, err := h.ordersGateway.CreateOrder(ctx, &pb.CreateOrderRequest{
-		CustomerID: customerID,
-		Items:      items,
+		CustomerID:	customerID,
+		Items:		items,
 	})
 	if err != nil {
 		span.SetStatus(otelCodes.Error, err.Error())
@@ -373,10 +343,9 @@ func (h *handler) handleCreateOrder(c *gin.Context) {
 		return
 	}
 
-	// Return the created order along with the UI redirect URL for success
 	res := &CreateOrderRequest{
-		Order:         o,
-		RedirectToURL: fmt.Sprintf("%s/success.html?customerID=%s&orderID=%s", h.publicURL, o.CustomerID, o.ID),
+		Order:		o,
+		RedirectToURL:	fmt.Sprintf("%s/success.html?customerID=%s&orderID=%s", h.publicURL, o.CustomerID, o.ID),
 	}
 
 	common.WriteJSON(c.Writer, http.StatusOK, res)

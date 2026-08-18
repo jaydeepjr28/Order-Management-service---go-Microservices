@@ -1,214 +1,198 @@
 # OMS Go Microservices
 
-> A production-inspired Order Management System built with **Go**,
-> **gRPC**, **RabbitMQ**, **Consul**, **OpenTelemetry**, **Gin**, and **PostgreSQL**.
+> A production-inspired Order Management System built with Go, gRPC, RabbitMQ, Consul, OpenTelemetry, Gin, PostgreSQL, Redis, and React.
 
 ## Overview
 
-This project demonstrates how a distributed backend system can be built
-using a microservices architecture. It combines synchronous
-communication through **gRPC** with asynchronous event-driven
-communication using **RabbitMQ**. Service discovery is handled by
-**Consul**, while **OpenTelemetry** and **Jaeger** provide end-to-end
-distributed tracing. Data is persisted securely in **PostgreSQL** and **Redis**.
+This project demonstrates a robust, distributed backend built with independently deployable Go microservices, coupled with a modern React frontend. The system showcases best practices in distributed systems architecture, combining **synchronous gRPC** communication for real-time, critical-path interactions with **asynchronous RabbitMQ** events for decoupled, eventual consistency. 
 
-## Key Features
+Service discovery is dynamically managed by **HashiCorp Consul**, while **OpenTelemetry** and **Jaeger** provide comprehensive end-to-end distributed tracing across HTTP, gRPC, and AMQP boundaries.
 
--   API Gateway exposing REST endpoints secured via **JWT Authentication**
--   Independent Go microservices
--   gRPC for internal synchronous communication
--   RabbitMQ for asynchronous fanout workflows
--   Consul service discovery and health registration
--   OpenTelemetry tracing across HTTP, gRPC and AMQP
--   Retry handling for message consumers
--   Razorpay payment webhook integration
--   Data persistence mapped across isolated **PostgreSQL** instances
--   Docker-based local development
+---
 
-------------------------------------------------------------------------
+## 🎯 Key Features
 
-# High-Level Architecture
+- **REST API Gateway**: Built with Gin, featuring JWT authentication, request routing, and acting as the single entry point for clients.
+- **Microservices Architecture**: Domain-driven Go services communicating via gRPC and RabbitMQ.
+- **Database-per-Service Pattern**: Isolated PostgreSQL databases for the `gateway`, `orders`, and `payments` services to ensure loose coupling.
+- **Caching & Ephemeral State**: Redis-backed shopping carts for low-latency operations.
+- **Service Discovery**: HashiCorp Consul integration for dynamic service registration and health checks.
+- **Observability**: OpenTelemetry tracing integrated with Jaeger for monitoring request lifecycles across the distributed system.
+- **External Integration**: Razorpay payment gateway integration with webhook support for real-time payment confirmation.
+- **Frontend App**: A React application built with Vite providing a user interface for the OMS.
+- **Containerized Environment**: Complete local development setup using Docker Compose.
 
-``` text
-                     Client
-                        │
-                 HTTP / REST (JWT)
-                        │
-                  ┌─────────────┐
-                  │ API Gateway │
-                  └─────────────┘
-                        │
-                      gRPC
-        ┌───────────────┼───────────────┐
-        ▼               ▼               ▼
-  ┌──────────┐    ┌──────────┐    ┌──────────┐
-  │   Cart   │    │  Orders  │    │  Stock   │
-  └──────────┘    └──────────┘    └──────────┘
-  (Redis DB)           │               │
-                       │               │
-                 gRPC  │               │ Publish
-                       ▼               ▼
-                ┌──────────┐      RabbitMQ
-                │  Stock   │           │
-                └──────────┘           │
-                                       ▼
-                     UserRegisteredEvent / OrderCreatedEvent
-                                       │
-                     ┌─────────────────┴─────────────────┐
-                     ▼                                   ▼
-              Notification                        Payments Service
-                Service                                  │
-                                                  Razorpay Webhook
-                                                         │
-                                                         ▼
-                                                     OrderPaid
-                                                    Exchange
-                                                  /      |     \
-                                                 ▼       ▼      ▼
-                                            Orders    Kitchen  Stock
-                                                         │
-                                                       gRPC
-                                                         ▼
-                                                     Orders
+---
+
+## 🏗️ High-Level Architecture & Data Flow
+
+```text
+Client (React Frontend)
+  |
+HTTP / REST (JWT)
+  |
+API Gateway
+  |---------------------> Cart (Redis)
+  |---------------------> Orders ----gRPC----> Stock (Inventory Check)
+  |                                      |
+  |                                      +---- RabbitMQ ("order.created") ----> Payments
+  |                                                         
+  |                                      +---- RabbitMQ ("order.paid") -------> Notification
+  |                                                                           -> Kitchen (Prep)
+  |                                                                           -> Stock (Deduct)
+  |
+  +---- PostgreSQL databases (Isolated per service: Gateway DB, Orders DB, Payments DB)
 ```
 
-> Note: Kitchen updates the Orders service through **gRPC** after
-> processing; it does **not** publish an `OrderPrepared` event.
+### The Order Lifecycle
+1. **Creation**: A user checks out via the API Gateway. The Gateway makes a synchronous gRPC call to the **Orders** service.
+2. **Validation**: The Orders service makes a synchronous gRPC call to the **Stock** service to ensure inventory is available.
+3. **Persistence**: If valid, the order is saved in the Orders PostgreSQL database.
+4. **Event Published**: The Orders service publishes an `order.created` event to RabbitMQ.
+5. **Payment Link**: The **Payments** service consumes `order.created` and generates a Razorpay payment link.
+6. **Payment Confirmation**: Upon successful payment, Razorpay hits a webhook on the Payments service, which verifies the signature and publishes an `order.paid` event.
+7. **Fulfillment**: 
+    - The **Kitchen** service consumes `order.paid` and begins preparation. It updates the order status via gRPC as prep progresses.
+    - The **Stock** service consumes `order.paid` to permanently deduct the reserved inventory.
+    - The **Notification** service consumes `order.paid` to simulate sending a receipt to the user.
 
-------------------------------------------------------------------------
-# API Endpoints
+---
 
-The API Gateway exposes the following REST endpoints:
+## 📂 Project Structure (Domain Services)
 
--   `POST /api/users/register` - Registers a user, publishes event, returns JWT.
--   `POST /api/users/login` - Authenticates a user, returns JWT.
--   `POST /api/customers/:customerID/orders` - Creates a new order.
--   `GET /api/customers/:customerID/orders/:orderID` - Fetches the full details of an order.
--   `GET /api/customers/:customerID/orders/:orderID/status` - Fetches just the status of an order.
--   `GET /api/inventory` - Lists all available inventory items from the stock service.
--   `GET /api/cart` - Fetches the active cart for a user.
--   `POST /api/cart/items` - Adds an item to the cart.
--   `DELETE /api/cart/items/:productID` - Removes an item from the cart.
--   `DELETE /api/cart` - Clears the cart.
+| Service | Responsibility | Port (Dev) | Datastore |
+| --- | --- | --- | --- |
+| `gateway` | REST API, JWT authentication, rate limiting, and request routing. | `8080` | PostgreSQL (`gateway`) |
+| `orders` | Creates orders, validates stock, and maintains order state (`OrderService`). | `2000` | PostgreSQL (`orders`) |
+| `payments` | Creates payment links and processes Razorpay webhooks. | `2001` | PostgreSQL (`payments`) |
+| `stock` | Provides inventory validation and final inventory updates (`StockService`). | `2002` | In-memory/Configured |
+| `kitchen` | Consumes paid orders and marks preparation progress. | `2003` | None (Stateless) |
+| `cart` | Provides Redis-backed shopping cart operations (`CartService`). | `2005` | Redis |
+| `notification`| Consumes `user.registered` and `order.paid` events. | `2006` | None (Stateless) |
+| `frontend` | React-based user interface for interacting with the OMS. | `5173` | N/A |
+| `common` | Shared code (protobufs, telemetry, broker configs, error models). | N/A | N/A |
 
-------------------------------------------------------------------------
+---
 
-# Services
+## 🚀 Getting Started
 
-## API Gateway
--   Public REST API.
--   Rate limiting and **JWT Authentication**.
--   Converts HTTP requests to gRPC.
--   Starts distributed traces.
--   Stores user credentials in its dedicated `gateway-postgres` DB.
--   Publishes `UserRegisteredEvent`.
+### Prerequisites
 
-## Orders
--   Creates and stores orders in `orders-postgres` using a hybrid relational/JSONB approach.
--   Calls Stock through gRPC for inventory validation.
--   Publishes `OrderCreated`.
--   Consumes payment updates (`OrderPaid`).
--   Maintains order state.
+- **Docker & Docker Compose**: For infrastructure (Postgres, Redis, RabbitMQ, Consul, Jaeger).
+- **Go 1.20+**: If running Go services directly on your host machine.
+- **Make**: For using `Makefile` commands.
+- **Node.js & npm**: For the React frontend.
 
-## Stock
--   Inventory validation.
--   Synchronous gRPC API.
--   Consumes `OrderPaid` to manage final inventory counts.
+### 1. Environment Configuration
 
-## Payments
--   Consumes `OrderCreated`.
--   Creates payment links via Razorpay (falls back to an in-memory mock if keys are missing for local dev).
--   Processes Razorpay webhook.
--   Publishes `OrderPaid`.
--   Uses `payments-postgres` for persistent webhook deduplication.
+Create a `.env` file in the root directory.
 
-## Kitchen
--   Consumes `OrderPaid`.
--   Simulates preparation.
--   Calls Orders via gRPC to mark status.
+```env
+# Production/Standard Database Passwords
+GATEWAY_POSTGRES_PASSWORD=password
+ORDERS_POSTGRES_PASSWORD=password
+PAYMENTS_POSTGRES_PASSWORD=password
 
-## Cart
--   Manages user shopping carts.
--   Exposes gRPC API.
--   Utilizes **Redis** for fast, in-memory storage.
+# Development Database Passwords (Used by docker-compose.dev.yml)
+DEV_GATEWAY_POSTGRES_PASSWORD=password
+DEV_ORDERS_POSTGRES_PASSWORD=password
+DEV_PAYMENTS_POSTGRES_PASSWORD=password
 
-## Notification
--   Background consumer service.
--   Consumes `UserRegisteredEvent` and `OrderCreatedEvent` to send simulated emails/SMS.
+# Razorpay Credentials (Required for payments service)
+RAZORPAY_KEY_ID=your_key_id
+RAZORPAY_KEY_SECRET=your_key_secret
+RAZORPAY_WEBHOOK_SECRET=your_webhook_secret
+```
 
-------------------------------------------------------------------------
+### 2. Running the System (Fully Dockerized)
 
-# Communication
+The easiest way to start the entire system (infrastructure + all microservices) is using Docker Compose:
 
-## Synchronous (gRPC)
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
 
--   Gateway → Orders, Stock, Cart
--   Orders → Stock
--   Payments → Orders
--   Kitchen → Orders
+This provisions:
+- 3x PostgreSQL instances
+- Redis & RabbitMQ
+- HashiCorp Consul & Jaeger
+- All Go microservices
 
-## Asynchronous (RabbitMQ)
+### 3. Running Services Locally (Hybrid Mode)
 
--   Gateway → UserRegisteredEvent
--   Orders → OrderCreatedEvent
--   Payments → OrderPaidEvent
--   Notification consumes UserRegisteredEvent & OrderCreatedEvent
--   Payments consumes OrderCreatedEvent
--   Orders, Kitchen, Stock consume OrderPaidEvent
+For faster iterative development, run the infrastructure in Docker and the Go services on your host:
 
-------------------------------------------------------------------------
+Start infrastructure dependencies:
+```bash
+make deps
+```
 
-# Typical Request Flow
+Start all Go services (Note: this opens new cmd windows for each service, configured for Windows):
+```bash
+make run
+```
 
-1.  Client registers/logs in via Gateway, receiving a JWT.
-2.  Client manages cart items via Gateway → Cart.
-3.  Client checks out. Gateway forwards request to Orders using gRPC.
-4.  Orders validates inventory through Stock.
-5.  Orders stores order in Postgres and publishes `OrderCreated`.
-6.  Payments consumes the event and generates a payment link.
-7.  Notification consumes the event and emails the user the receipt/link.
-8.  Razorpay webhook hits Payments, confirming payment.
-9.  Payments publishes `OrderPaid`.
-10. Orders updates payment status in Postgres.
-11. Kitchen consumes `OrderPaid` and prepares the order.
-12. Kitchen updates Orders using gRPC.
-13. Stock consumes `OrderPaid` and commits inventory deductions.
+### 4. Running the Frontend
 
-------------------------------------------------------------------------
+```bash
+cd frontend
+npm install
+npm run dev
+```
+The React application will be available at `http://localhost:5173`.
 
-# Service Discovery
+---
 
-All services register with **Consul** and can discover each other
-dynamically instead of relying on hard-coded addresses.
+## 📡 API Endpoints (Gateway)
 
-------------------------------------------------------------------------
+The API Gateway is exposed at `http://localhost:8080`.
 
-# Observability
+**Authentication (`UserService`)**
+- `POST /api/users/register` - Register a user (publishes `user.registered`). Returns JWT.
+- `POST /api/users/login` - Authenticate a user. Returns JWT.
 
-OpenTelemetry propagates trace context across:
+**Orders (`OrderService`)**
+- `POST /api/customers/:customerID/orders` - Create an order (Body: `[{ "ID": "item_1", "Quantity": 2 }]`).
+- `GET /api/customers/:customerID/orders/:orderID` - Fetch specific order details.
+- `GET /api/customers/:customerID/orders/:orderID/status` - Fetch order status.
 
--   HTTP
--   gRPC
--   RabbitMQ message headers
+**Inventory & Cart (`CartService` & `StockService`)**
+- `GET /api/inventory` - List available items.
+- `GET /api/cart` - Fetch the active cart.
+- `POST /api/cart/items` - Add item to cart (Body: `{ "ProductID": "item_1", "Quantity": 1 }`).
+- `DELETE /api/cart/items/:productID` - Remove item from cart.
+- `DELETE /api/cart` - Clear the cart.
 
-Jaeger visualizes the complete lifecycle of a request.
+---
 
-------------------------------------------------------------------------
+## 🔍 Observability & Tracing
 
-# Technology Stack
+The system uses **OpenTelemetry** to trace requests as they travel across HTTP, gRPC, and RabbitMQ.
 
-  Technology         Purpose
-  ------------------ -----------------------
-  Go                 Microservices
-  Gin                REST Gateway
-  gRPC               Service communication
-  Protocol Buffers   Contracts
-  RabbitMQ           Messaging
-  Consul             Service discovery
-  OpenTelemetry      Tracing
-  Jaeger             Trace visualization
-  Docker             Local infrastructure
-  PostgreSQL         Persistent data storage
-  Redis              In-memory data store
+When the system is running, access the **Jaeger UI** at:
+👉 `http://localhost:16686`
 
-------------------------------------------------------------------------
+This allows you to visualize latency, pinpoint bottlenecks, and understand the exact path of an order from creation to payment to fulfillment.
+
+---
+
+## 🛠️ Technology Stack
+
+| Component | Technology |
+| --- | --- |
+| **Backend Language** | Go (Golang) |
+| **Frontend Language** | React, Vite, JavaScript |
+| **API Gateway** | Gin (HTTP Framework) |
+| **RPC Framework** | gRPC & Protocol Buffers |
+| **Message Broker** | RabbitMQ |
+| **Service Registry**| HashiCorp Consul |
+| **Databases** | PostgreSQL (Relational) |
+| **Cache** | Redis (In-memory) |
+| **Tracing** | OpenTelemetry & Jaeger |
+| **Deployment** | Docker & Docker Compose |
+
+---
+
+## License
+
+Educational project for learning distributed systems, event-driven architectures, and Go microservices.

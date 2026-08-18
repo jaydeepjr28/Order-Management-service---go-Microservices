@@ -11,12 +11,10 @@ import (
 	consul "github.com/hashicorp/consul/api"
 )
 
-// Registry implements the discovery.Registry interface using HashiCorp Consul.
 type Registry struct {
 	client *consul.Client
 }
 
-// NewRegistry initializes a new Consul client connected to the given address.
 func NewRegistry(addr, serviceName string) (*Registry, error) {
 	config := consul.DefaultConfig()
 	config.Address = addr
@@ -29,8 +27,6 @@ func NewRegistry(addr, serviceName string) (*Registry, error) {
 	return &Registry{client}, nil
 }
 
-// Register adds the microservice to Consul, specifying its host and port.
-// It also sets up a TTL-based health check that requires the service to ping Consul periodically.
 func (r *Registry) Register(ctx context.Context, instanceID, serviceName, hostPort string) error {
 	host, portStr, found := strings.Cut(hostPort, ":")
 	if !found {
@@ -42,32 +38,29 @@ func (r *Registry) Register(ctx context.Context, instanceID, serviceName, hostPo
 	}
 
 	return r.client.Agent().ServiceRegister(&consul.AgentServiceRegistration{
-		ID:      instanceID,
-		Address: host,
-		Port:    port,
-		Name:    serviceName,
+		ID:		instanceID,
+		Address:	host,
+		Port:		port,
+		Name:		serviceName,
 		Check: &consul.AgentServiceCheck{
-			CheckID:                        instanceID,
-			TLSSkipVerify:                  true,
-			TTL:                            "5s",
-			Timeout:                        "1s",
-			DeregisterCriticalServiceAfter: "10s",
+			CheckID:			instanceID,
+			TLSSkipVerify:			true,
+			TTL:				"5s",
+			Timeout:			"1s",
+			DeregisterCriticalServiceAfter:	"10s",
 		},
 	})
 }
 
-// Deregister removes the service from Consul, stopping any further traffic routing to it.
 func (r *Registry) Deregister(ctx context.Context, instanceID string, serviceName string) error {
 	log.Printf("Deregistering service %s", instanceID)
 	return r.client.Agent().CheckDeregister(instanceID)
 }
 
-// HealthCheck is called periodically by the microservice to tell Consul it is still alive.
 func (r *Registry) HealthCheck(instanceID string, serviceName string) error {
 	return r.client.Agent().UpdateTTL(instanceID, "online", consul.HealthPassing)
 }
 
-// Discover queries Consul for all healthy instances of a given service name.
 func (r *Registry) Discover(ctx context.Context, serviceName string) ([]string, error) {
 	entries, _, err := r.client.Health().Service(serviceName, "", true, nil)
 	if err != nil {
