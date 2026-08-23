@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	common "github.com/jaydeepjr28/commons"
@@ -61,7 +60,7 @@ func authMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		customerID, err := auth.ValidateToken(parts[1])
+		customerID, err := auth.ValidateAccessToken(parts[1])
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
 			return
@@ -75,6 +74,7 @@ func authMiddleware() gin.HandlerFunc {
 func (h *handler) registerRoutes(router *gin.Engine) {
 	router.POST("/api/users/register", h.handleRegister)
 	router.POST("/api/users/login", h.handleLogin)
+	router.POST("/api/users/refresh", h.handleRefreshToken)
 
 	api := router.Group("/api")
 	api.Use(authMiddleware())
@@ -111,14 +111,15 @@ func (h *handler) handleRegister(c *gin.Context) {
 		return
 	}
 
-	token, err := auth.GenerateToken(u.Email, 24*time.Hour)
+	accessToken, refreshToken, err := auth.GenerateAuthTokens(u.Email)
 	if err != nil {
 		common.WriteError(c.Writer, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	res := &pb.AuthResponse{
-		Token:		token,
+		AccessToken:	accessToken,
+		RefreshToken:	refreshToken,
 		CustomerID:	u.Email,
 	}
 
@@ -159,15 +160,43 @@ func (h *handler) handleLogin(c *gin.Context) {
 		return
 	}
 
-	token, err := auth.GenerateToken(u.Email, 24*time.Hour)
+	accessToken, refreshToken, err := auth.GenerateAuthTokens(u.Email)
 	if err != nil {
 		common.WriteError(c.Writer, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	res := &pb.AuthResponse{
-		Token:		token,
+		AccessToken:	accessToken,
+		RefreshToken:	refreshToken,
 		CustomerID:	u.Email,
+	}
+	common.WriteJSON(c.Writer, http.StatusOK, res)
+}
+
+func (h *handler) handleRefreshToken(c *gin.Context) {
+	var req RefreshTokenRequest
+	if err := common.ReadJSON(c.Request, &req); err != nil {
+		common.WriteError(c.Writer, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	customerID, err := auth.ValidateRefreshToken(req.RefreshToken)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired refresh token"})
+		return
+	}
+
+	accessToken, newRefreshToken, err := auth.GenerateAuthTokens(customerID)
+	if err != nil {
+		common.WriteError(c.Writer, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	res := &pb.AuthResponse{
+		AccessToken:  accessToken,
+		RefreshToken: newRefreshToken,
+		CustomerID:   customerID,
 	}
 	common.WriteJSON(c.Writer, http.StatusOK, res)
 }

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -13,37 +14,57 @@ var (
 	ErrExpiredToken	= errors.New("expired token")
 )
 
-var jwtSecretKey = []byte("my-super-secret-key-1234")
+func getJWTSecretKey() []byte {
+	secret := os.Getenv("JWT_SECRET_KEY")
+	return []byte(secret)
+}
 
 type CustomClaims struct {
 	CustomerID	string	`json:"customer_id"`
+	TokenType	string	`json:"token_type"`
 	jwt.RegisteredClaims
 }
 
-func GenerateToken(customerID string, duration time.Duration) (string, error) {
-
-	claims := CustomClaims{
-		CustomerID:	customerID,
+func GenerateAuthTokens(customerID string) (string, string, error) {
+	accessClaims := CustomClaims{
+		CustomerID: customerID,
+		TokenType:  "access",
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt:	jwt.NewNumericDate(time.Now().Add(duration)),
-			IssuedAt:	jwt.NewNumericDate(time.Now()),
-			NotBefore:	jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
 		},
 	}
+	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
+	accessSignature, err := accessToken.SignedString(getJWTSecretKey())
+	if err != nil {
+		return "", "", err
+	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	refreshClaims := CustomClaims{
+		CustomerID: customerID,
+		TokenType:  "refresh",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * 24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
+		},
+	}
+	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
+	refreshSignature, err := refreshToken.SignedString(getJWTSecretKey())
+	if err != nil {
+		return "", "", err
+	}
 
-	return token.SignedString(jwtSecretKey)
+	return accessSignature, refreshSignature, nil
 }
 
-func ValidateToken(tokenString string) (string, error) {
-
+func validateTokenBase(tokenString string, expectedType string) (string, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
-
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
 		}
-		return jwtSecretKey, nil
+		return getJWTSecretKey(), nil
 	})
 
 	if err != nil {
@@ -58,5 +79,17 @@ func ValidateToken(tokenString string) (string, error) {
 		return "", ErrInvalidToken
 	}
 
+	if claims.TokenType != expectedType {
+		return "", ErrInvalidToken
+	}
+
 	return claims.CustomerID, nil
+}
+
+func ValidateAccessToken(tokenString string) (string, error) {
+	return validateTokenBase(tokenString, "access")
+}
+
+func ValidateRefreshToken(tokenString string) (string, error) {
+	return validateTokenBase(tokenString, "refresh")
 }

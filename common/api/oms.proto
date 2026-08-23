@@ -98,8 +98,9 @@ message LoginRequest {
 }
 
 message AuthResponse {
-  string Token = 1;
-  string CustomerID = 2;
+  string AccessToken = 1;
+  string RefreshToken = 2;
+  string CustomerID = 3;
 }
 
 message GetUserRequest {

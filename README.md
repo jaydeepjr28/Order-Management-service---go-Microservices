@@ -12,49 +12,74 @@ Service discovery is dynamically managed by **HashiCorp Consul**, while **OpenTe
 
 ## 🎯 Key Features
 
-- **REST API Gateway**: Built with Gin, featuring JWT authentication, request routing, and acting as the single entry point for clients.
+- **REST API Gateway**: Built with Gin, featuring JWT authentication (Access & Refresh tokens), rate limiting (Token Bucket), request routing, and acting as the single entry point for clients.
 - **Microservices Architecture**: Domain-driven Go services communicating via gRPC and RabbitMQ.
 - **Database-per-Service Pattern**: Isolated PostgreSQL databases for the `gateway`, `orders`, and `payments` services to ensure loose coupling.
 - **Caching & Ephemeral State**: Redis-backed shopping carts for low-latency operations.
-- **Service Discovery**: HashiCorp Consul integration for dynamic service registration and health checks.
-- **Observability**: OpenTelemetry tracing integrated with Jaeger for monitoring request lifecycles across the distributed system.
-- **External Integration**: Razorpay payment gateway integration with webhook support for real-time payment confirmation.
+- **Service Discovery**: HashiCorp Consul integration for dynamic service registration, health checks, and client-side load balancing.
+- **Observability**: OpenTelemetry tracing integrated with Jaeger for monitoring request lifecycles across HTTP, gRPC, and AMQP boundaries.
+- **Resilient Message Broker**: RabbitMQ fanout exchanges with Dead Letter Exchanges (DLX), Dead Letter Queues (DLQ), and automated retry with backoff.
+- **External Integration**: Razorpay payment gateway integration with HMAC-SHA256 signature verification and webhook idempotency.
 - **Frontend App**: A React application built with Vite providing a user interface for the OMS.
-- **Containerized Environment**: Complete local development setup using Docker Compose.
+- **Containerized Environment**: Complete local development setup using Docker & Docker Compose with multi-stage builds.
 
 ---
 
-## 🏗️ High-Level Architecture & Data Flow
+## 🏗️ Architecture & Communication Flow
 
-```text
-Client (React Frontend)
-  |
-HTTP / REST (JWT)
-  |
-API Gateway
-  |---------------------> Cart (Redis)
-  |---------------------> Orders ----gRPC----> Stock (Inventory Check)
-  |                                      |
-  |                                      +---- RabbitMQ ("order.created") ----> Payments
-  |                                                         
-  |                                      +---- RabbitMQ ("order.paid") -------> Notification
-  |                                                                           -> Kitchen (Prep)
-  |                                                                           -> Stock (Deduct)
-  |
-  +---- PostgreSQL databases (Isolated per service: Gateway DB, Orders DB, Payments DB)
+```mermaid
+flowchart TD
+    Client["📱 Client (React Frontend)"] -- "HTTP / REST (JWT Auth)" --> Gateway["🌐 API Gateway (Gin)"]
+
+    subgraph Sync ["⚡ Synchronous gRPC"]
+        Gateway -->|gRPC| Cart["🛒 Cart (Redis)"]
+        Gateway -->|gRPC| Orders["📦 Orders (Postgres)"]
+        Orders -->|gRPC| Stock["📊 Stock (Inventory Check)"]
+    end
+
+    subgraph Async ["📬 Asynchronous Events (RabbitMQ Fanout)"]
+        Orders -.->|"order.created"| Payments["💳 Payments (Postgres)"]
+        Payments -.->|"order.paid"| Kitchen["👨‍🍳 Kitchen (Cooking)"]
+        Payments -.->|"order.paid"| Stock
+        Payments -.->|"order.paid"| Orders
+        Payments -.->|"order.paid"| Notification["🔔 Notification"]
+    end
+
+    subgraph Infra ["🔭 Discovery & Observability"]
+        Consul["HashiCorp Consul (Service Registry)"]
+        Jaeger["OpenTelemetry + Jaeger (Distributed Tracing)"]
+    end
 ```
 
-### The Order Lifecycle
-1. **Creation**: A user checks out via the API Gateway. The Gateway makes a synchronous gRPC call to the **Orders** service.
-2. **Validation**: The Orders service makes a synchronous gRPC call to the **Stock** service to ensure inventory is available.
-3. **Persistence**: If valid, the order is saved in the Orders PostgreSQL database.
-4. **Event Published**: The Orders service publishes an `order.created` event to RabbitMQ.
-5. **Payment Link**: The **Payments** service consumes `order.created` and generates a Razorpay payment link.
-6. **Payment Confirmation**: Upon successful payment, Razorpay hits a webhook on the Payments service, which verifies the signature and publishes an `order.paid` event.
-7. **Fulfillment**: 
-    - The **Kitchen** service consumes `order.paid` and begins preparation. It updates the order status via gRPC as prep progresses.
-    - The **Stock** service consumes `order.paid` to permanently deduct the reserved inventory.
-    - The **Notification** service consumes `order.paid` to simulate sending a receipt to the user.
+### 🔄 Communication Model
+
+| Pattern | Protocol | Scope | Purpose |
+|---|---|---|---|
+| **Synchronous** | **gRPC** (Protobuf) | `Gateway ➔ Cart, Orders ➔ Stock` | Low-latency, critical-path queries & inventory checks. |
+| **Asynchronous** | **AMQP** (RabbitMQ) | `order.created`, `order.paid`, `user.registered` | Decoupled event broadcast with Dead-Letter Queues (DLQ). |
+| **Edge Routing** | **HTTP/REST** (Gin) | `Client ➔ API Gateway` | Rate limiting (Token Bucket), JWT auth, and routing. |
+
+---
+
+### ⏱️ Order Lifecycle in 3 Phases
+
+1. **Order Initiation (Sync gRPC)**:
+   - Client sends checkout request to `Gateway`.
+   - `Gateway` calls `Orders` via gRPC, which verifies inventory synchronously with `Stock`.
+   - `Orders` saves record as `pending` in its PostgreSQL database and returns response to client.
+
+2. **Payment Processing (Async Event)**:
+   - `Orders` publishes `order.created` to RabbitMQ.
+   - `Payments` service consumes event, calls Razorpay API, and generates a payment link.
+   - Customer completes payment; Razorpay invokes `Payments` webhook.
+   - `Payments` verifies HMAC-SHA256 signature, ensures idempotency, and publishes `order.paid`.
+
+3. **Event Fanout & Fulfillment (Broadcast)**:
+   - `Kitchen` starts preparation (advancing order status to `ready` via gRPC).
+   - `Stock` permanently deducts reserved inventory.
+   - `Orders` marks the order as `paid` in its database.
+   - `Notification` sends receipt/confirmation.
+
 
 ---
 
@@ -70,7 +95,7 @@ API Gateway
 | `cart` | Provides Redis-backed shopping cart operations (`CartService`). | `2005` | Redis |
 | `notification`| Consumes `user.registered` and `order.paid` events. | `2006` | None (Stateless) |
 | `frontend` | React-based user interface for interacting with the OMS. | `5173` | N/A |
-| `common` | Shared code (protobufs, telemetry, broker configs, error models). | N/A | N/A |
+| `common` | Shared code (protobufs, telemetry, broker configs, error models, discovery). | N/A | N/A |
 
 ---
 
@@ -85,9 +110,12 @@ API Gateway
 
 ### 1. Environment Configuration
 
-Create a `.env` file in the root directory.
+Create a `.env` file in the root directory:
 
 ```env
+# JWT Secret Key
+JWT_SECRET_KEY=my-super-secret-key-1234
+
 # Production/Standard Database Passwords
 GATEWAY_POSTGRES_PASSWORD=password
 ORDERS_POSTGRES_PASSWORD=password
@@ -113,8 +141,8 @@ docker compose -f docker-compose.dev.yml up --build
 ```
 
 This provisions:
-- 3x PostgreSQL instances
-- Redis & RabbitMQ
+- 3x PostgreSQL instances (Gateway, Orders, Payments)
+- Redis & RabbitMQ (with management console)
 - HashiCorp Consul & Jaeger
 - All Go microservices
 
@@ -127,7 +155,7 @@ Start infrastructure dependencies:
 make deps
 ```
 
-Start all Go services (Note: this opens new cmd windows for each service, configured for Windows):
+Start all Go services (configured for Windows CMD/terminals):
 ```bash
 make run
 ```
@@ -147,32 +175,37 @@ The React application will be available at `http://localhost:5173`.
 
 The API Gateway is exposed at `http://localhost:8080`.
 
-**Authentication (`UserService`)**
-- `POST /api/users/register` - Register a user (publishes `user.registered`). Returns JWT.
-- `POST /api/users/login` - Authenticate a user. Returns JWT.
+### 🔑 Authentication (`UserService`)
+- `POST /api/users/register` - Register a user (publishes `user.registered`). Returns JWT access & refresh tokens.
+- `POST /api/users/login` - Authenticate a user. Returns JWT access & refresh tokens.
+- `POST /api/users/refresh` - Refresh access token using a valid refresh token.
 
-**Orders (`OrderService`)**
+### 📦 Orders (`OrderService`) *(Protected by JWT)*
 - `POST /api/customers/:customerID/orders` - Create an order (Body: `[{ "ID": "item_1", "Quantity": 2 }]`).
+- `GET /api/customers/:customerID/orders` - Fetch all orders for a customer.
 - `GET /api/customers/:customerID/orders/:orderID` - Fetch specific order details.
 - `GET /api/customers/:customerID/orders/:orderID/status` - Fetch order status.
 
-**Inventory & Cart (`CartService` & `StockService`)**
-- `GET /api/inventory` - List available items.
-- `GET /api/cart` - Fetch the active cart.
+### 🛒 Cart & Inventory (`CartService` & `StockService`) *(Protected by JWT)*
+- `GET /api/inventory` - List available items in stock.
+- `GET /api/cart` - Fetch the active user's shopping cart.
 - `POST /api/cart/items` - Add item to cart (Body: `{ "ProductID": "item_1", "Quantity": 1 }`).
-- `DELETE /api/cart/items/:productID` - Remove item from cart.
-- `DELETE /api/cart` - Clear the cart.
+- `DELETE /api/cart/items/:productID` - Remove a specific item from cart.
+- `DELETE /api/cart` - Clear the user's cart.
+
+### 💳 Payments Webhook
+- `POST /webhook` (Payments service - port `2001`) - Razorpay payment confirmation webhook.
 
 ---
 
 ## 🔍 Observability & Tracing
 
-The system uses **OpenTelemetry** to trace requests as they travel across HTTP, gRPC, and RabbitMQ.
+The system uses **OpenTelemetry** to trace requests as they travel across HTTP, gRPC, and RabbitMQ boundaries.
 
 When the system is running, access the **Jaeger UI** at:
 👉 `http://localhost:16686`
 
-This allows you to visualize latency, pinpoint bottlenecks, and understand the exact path of an order from creation to payment to fulfillment.
+This allows you to visualize request lifecycles, inspect latency bottlenecks, and understand the exact flow of an order from creation to payment and fulfillment.
 
 ---
 
@@ -181,14 +214,14 @@ This allows you to visualize latency, pinpoint bottlenecks, and understand the e
 | Component | Technology |
 | --- | --- |
 | **Backend Language** | Go (Golang) |
-| **Frontend Language** | React, Vite, JavaScript |
+| **Frontend Framework** | React, Vite, JavaScript |
 | **API Gateway** | Gin (HTTP Framework) |
 | **RPC Framework** | gRPC & Protocol Buffers |
-| **Message Broker** | RabbitMQ |
+| **Message Broker** | RabbitMQ (AMQP) |
 | **Service Registry**| HashiCorp Consul |
-| **Databases** | PostgreSQL (Relational) |
-| **Cache** | Redis (In-memory) |
-| **Tracing** | OpenTelemetry & Jaeger |
+| **Databases** | PostgreSQL (Relational, Database-per-service) |
+| **Cache** | Redis (In-memory cart) |
+| **Distributed Tracing** | OpenTelemetry & Jaeger |
 | **Deployment** | Docker & Docker Compose |
 
 ---
