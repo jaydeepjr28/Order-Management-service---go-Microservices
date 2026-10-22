@@ -342,15 +342,6 @@ service CartService {
 
 ---
 
-## 🤖 AI Agents & Developer Pair Programming
-
-STRATUM was engineered with automated developer ergonomics and agentic workflows in mind:
-* **Pre-Integrated IDE Context**: Contains structured knowledge items and schemas enabling AI assistants (like Google DeepMind Antigravity, GitHub Copilot, and Cursor) to accurately trace gRPC stubs, Kafka topics, and typed frontend contracts.
-* **Deterministic Dual-Mode Testing**: When third-party credentials (like Google OAuth or Razorpay keys) are absent, services dynamically activate interactive sandboxes so agents and automated tests can run without blocking on manual external logins.
-* **Resilient Graceful Degradation**: Eliminates hard `log.Fatalf` crashes during downstream service restarts, enabling continuous background integration without cascade failures.
-
----
-
 ## 🔄 Usage Workflows
 
 ### 1. Customer Shopping & Asynchronous Fulfillment
