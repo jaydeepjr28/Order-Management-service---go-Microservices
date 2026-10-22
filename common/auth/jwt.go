@@ -21,13 +21,15 @@ func getJWTSecretKey() []byte {
 
 type CustomClaims struct {
 	CustomerID	string	`json:"customer_id"`
+	Role		string	`json:"role"`
 	TokenType	string	`json:"token_type"`
 	jwt.RegisteredClaims
 }
 
-func GenerateAuthTokens(customerID string) (string, string, error) {
+func GenerateAuthTokens(customerID string, role string) (string, string, error) {
 	accessClaims := CustomClaims{
 		CustomerID: customerID,
+		Role:       role,
 		TokenType:  "access",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * time.Minute)),
@@ -43,6 +45,7 @@ func GenerateAuthTokens(customerID string) (string, string, error) {
 
 	refreshClaims := CustomClaims{
 		CustomerID: customerID,
+		Role:       role,
 		TokenType:  "refresh",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * 24 * time.Hour)),
@@ -59,7 +62,7 @@ func GenerateAuthTokens(customerID string) (string, string, error) {
 	return accessSignature, refreshSignature, nil
 }
 
-func validateTokenBase(tokenString string, expectedType string) (string, error) {
+func validateTokenBase(tokenString string, expectedType string) (string, string, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
@@ -69,27 +72,27 @@ func validateTokenBase(tokenString string, expectedType string) (string, error) 
 
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
-			return "", ErrExpiredToken
+			return "", "", ErrExpiredToken
 		}
-		return "", err
+		return "", "", err
 	}
 
 	claims, ok := token.Claims.(*CustomClaims)
 	if !ok || !token.Valid {
-		return "", ErrInvalidToken
+		return "", "", ErrInvalidToken
 	}
 
 	if claims.TokenType != expectedType {
-		return "", ErrInvalidToken
+		return "", "", ErrInvalidToken
 	}
 
-	return claims.CustomerID, nil
+	return claims.CustomerID, claims.Role, nil
 }
 
-func ValidateAccessToken(tokenString string) (string, error) {
+func ValidateAccessToken(tokenString string) (string, string, error) {
 	return validateTokenBase(tokenString, "access")
 }
 
-func ValidateRefreshToken(tokenString string) (string, error) {
+func ValidateRefreshToken(tokenString string) (string, string, error) {
 	return validateTokenBase(tokenString, "refresh")
 }

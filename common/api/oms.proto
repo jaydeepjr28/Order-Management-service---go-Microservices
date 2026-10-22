@@ -40,6 +40,7 @@ message Item {
   string Name = 2;
   int32 Quantity = 3;
   string PriceID = 4;
+  int64 Price = 5;
 }
 
 message ItemsWithQuantity {
@@ -57,7 +58,18 @@ service StockService {
   // CheckIfItemIsInStock verifies if the requested quantities are available and returns the full Item details.
   rpc CheckIfItemIsInStock(CheckIfItemIsInStockRequest) returns (CheckIfItemIsInStockResponse);
   rpc GetItems(GetItemsRequest) returns (GetItemsResponse);
+  rpc CreateItem(CreateItemRequest) returns (Item);
+  rpc UpdateItem(UpdateItemRequest) returns (Item);
 }
+
+message CreateItemRequest {
+  Item Item = 1;
+}
+
+message UpdateItemRequest {
+  Item Item = 1;
+}
+
 
 message CheckIfItemIsInStockRequest {
   repeated ItemsWithQuantity Items = 1;

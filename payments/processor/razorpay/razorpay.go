@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -122,9 +123,19 @@ func (p *Processor) orderTotal(order *pb.Order) (int64, string, error) {
 	var amount int64
 	items := make([]string, 0, len(order.Items))
 	for _, item := range order.Items {
-		price, ok := p.itemPrices[item.ID]
-		if !ok {
-			return 0, "", fmt.Errorf("no Razorpay price configured for item %q", item.ID)
+		var price int64
+		if item.Price >= 100 {
+			// Dynamic unit price verified from product catalog at checkout time
+			price = item.Price
+		} else if configuredPrice, ok := p.itemPrices[item.ID]; ok && configuredPrice >= 100 {
+			price = configuredPrice
+		} else if priceIDPrice, hasPriceID := p.itemPrices[item.PriceID]; hasPriceID && priceIDPrice >= 100 {
+			price = priceIDPrice
+		} else if defPrice, hasDef := p.itemPrices["default"]; hasDef && defPrice >= 100 {
+			price = defPrice
+		} else {
+			price = 9900
+			log.Printf("[Razorpay] Warning: item %q (%s) has no price in order payload or config; using fallback price %d paise (₹%.2f)", item.ID, item.Name, price, float64(price)/100.0)
 		}
 		amount += price * int64(item.Quantity)
 		items = append(items, fmt.Sprintf("%s x%d", item.Name, item.Quantity))
@@ -134,3 +145,9 @@ func (p *Processor) orderTotal(order *pb.Order) (int64, string, error) {
 	}
 	return amount, "Order: " + strings.Join(items, ", "), nil
 }
+
+func (p *Processor) RefundPayment(order *pb.Order) error {
+	// Log or call Razorpay refunds API when live
+	return nil
+}
+

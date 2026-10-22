@@ -22,3 +22,11 @@ func (s *TelemetryMiddleware) CreatePayment(ctx context.Context, o *pb.Order) (s
 
 	return s.next.CreatePayment(ctx, o)
 }
+
+func (s *TelemetryMiddleware) RefundPayment(ctx context.Context, o *pb.Order) error {
+	span := trace.SpanFromContext(ctx)
+	span.AddEvent(fmt.Sprintf("RefundPayment: %v", o))
+
+	return s.next.RefundPayment(ctx, o)
+}
+

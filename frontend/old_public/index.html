@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STRATUM — Distributed Commerce & Order Management Platform</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <div class="app-container">
+        <!-- Auth View -->
+        <div id="auth-view" class="view glass-panel active">
+            <h1 class="logo">STRATUM.</h1>
+            <p class="subtitle">Welcome to the STRATUM Platform</p>
+            
+            <div class="auth-tabs">
+                <button class="tab active" onclick="switchAuthTab('login')">Login</button>
+                <button class="tab" onclick="switchAuthTab('register')">Register</button>
+            </div>
+
+            <!-- Login Form -->
+            <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
+                <div class="input-group">
+                    <label for="login-email">Email</label>
+                    <input type="email" id="login-email" required placeholder="you@example.com">
+                </div>
+                <div class="input-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" required placeholder="••••••••">
+                </div>
+                <button type="submit" class="btn primary-btn">Sign In</button>
+                <p id="login-error" class="error-msg"></p>
+            </form>
+
+            <!-- Register Form -->
+            <form id="register-form" class="auth-form" onsubmit="handleRegister(event)">
+                <div class="input-group">
+                    <label for="register-name">Name</label>
+                    <input type="text" id="register-name" required placeholder="John Doe">
+                </div>
+                <div class="input-group">
+                    <label for="register-email">Email</label>
+                    <input type="email" id="register-email" required placeholder="you@example.com">
+                </div>
+                <div class="input-group">
+                    <label for="register-password">Password</label>
+                    <input type="password" id="register-password" required placeholder="••••••••">
+                </div>
+                <button type="submit" class="btn primary-btn">Create Account</button>
+                <p id="register-error" class="error-msg"></p>
+            </form>
+        </div>
+
+        <!-- Dashboard View -->
+        <div id="dashboard-view" class="view">
+            <header class="glass-header">
+                <h1 class="logo">STRATUM.</h1>
+                <nav class="main-nav">
+                    <button onclick="showSection('inventory')" class="nav-btn active">Inventory</button>
+                    <button onclick="showSection('cart')" class="nav-btn">Cart <span id="cart-count" class="badge">0</span></button>
+                    <button onclick="showSection('orders')" class="nav-btn">Orders</button>
+                    <button onclick="logout()" class="nav-btn logout-btn">Logout</button>
+                </nav>
+            </header>
+
+            <main class="dashboard-content">
+                <!-- Inventory Section -->
+                <section id="inventory-section" class="content-section active glass-panel">
+                    <h2>Available Products</h2>
+                    <div id="inventory-grid" class="products-grid">
+                        <!-- Products will be injected here -->
+                    </div>
+                </section>
+
+                <!-- Cart Section -->
+                <section id="cart-section" class="content-section glass-panel">
+                    <h2>Your Cart</h2>
+                    <div id="cart-items" class="cart-list">
+                        <!-- Cart items will be injected here -->
+                    </div>
+                    <div class="cart-summary">
+                        <button onclick="checkout()" class="btn primary-btn checkout-btn">Proceed to Checkout</button>
+                    </div>
+                </section>
+
+                <!-- Orders Section -->
+                <section id="orders-section" class="content-section glass-panel">
+                    <h2>Order History</h2>
+                    <div id="orders-list" class="orders-list" style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem;">
+                        <!-- Orders will be injected here -->
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="app.js?v=3"></script>
+</body>
+</html>

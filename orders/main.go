@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,15 +20,12 @@ import (
 )
 
 var (
-	serviceName	= "orders"
-	grpcAddr	= common.EnvString("GRPC_ADDR", "localhost:2000")
-	consulAddr	= common.EnvString("CONSUL_ADDR", "localhost:8500")
-	amqpUser	= common.EnvString("RABBITMQ_USER", "guest")
-	amqpPass	= common.EnvString("RABBITMQ_PASS", "guest")
-	amqpHost	= common.EnvString("RABBITMQ_HOST", "localhost")
-	amqpPort	= common.EnvString("RABBITMQ_PORT", "5672")
-	jaegerAddr	= common.EnvString("JAEGER_ADDR", "localhost:4318")
-	advertisedAddr	= common.EnvString("ADVERTISED_ADDR", "localhost:2000")
+	serviceName    = "orders"
+	grpcAddr       = common.EnvString("GRPC_ADDR", "localhost:2000")
+	consulAddr     = common.EnvString("CONSUL_ADDR", "localhost:8500")
+	kafkaBrokers   = common.EnvString("KAFKA_BROKERS", "localhost:9092")
+	jaegerAddr     = common.EnvString("JAEGER_ADDR", "localhost:4318")
+	advertisedAddr = common.EnvString("ADVERTISED_ADDR", "localhost:2000")
 )
 
 func main() {
@@ -63,11 +61,19 @@ func main() {
 
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
-	ch, close := broker.Connect(amqpUser, amqpPass, amqpHost, amqpPort)
-	defer func() {
-		close()
-		ch.Close()
-	}()
+	brokersList := strings.Split(kafkaBrokers, ",")
+	producer := broker.NewProducer(brokersList)
+	defer producer.Close()
+
+	orderTopics := []string{
+		broker.OrderPaidEvent,
+		broker.OrderCancelledEvent,
+		broker.OrderFailedEvent,
+		broker.OrderStockFailedEvent,
+		broker.OrderRefundedEvent,
+	}
+	reader := broker.NewConsumerGroup(brokersList, "orders-service-group", orderTopics)
+	defer reader.Close()
 
 	grpcServer := grpc.NewServer()
 
@@ -88,10 +94,10 @@ func main() {
 	svcWithTelemetry := NewTelemetryMiddleware(svc)
 	svcWithLogging := NewLoggingMiddleware(svcWithTelemetry)
 
-	NewGRPCHandler(grpcServer, svcWithLogging, ch)
+	NewGRPCHandler(grpcServer, svcWithLogging, producer)
 
 	consumer := NewConsumer(svcWithLogging)
-	go consumer.Listen(ch)
+	go consumer.Listen(ctx, reader, producer)
 
 	logger.Info("Starting gRPC server", zap.String("port", grpcAddr))
 

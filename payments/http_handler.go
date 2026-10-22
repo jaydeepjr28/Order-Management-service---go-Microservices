@@ -15,34 +15,127 @@ import (
 	"github.com/gin-gonic/gin"
 	pb "github.com/jaydeepjr28/commons/api"
 	"github.com/jaydeepjr28/commons/broker"
-	amqp "github.com/rabbitmq/amqp091-go"
-	"go.opentelemetry.io/otel"
 )
 
 type PaymentHTTPHandler struct {
-	channel		*amqp.Channel
-	webhookSecret	string
-	store		PaymentStore
+	producer      *broker.Producer
+	webhookSecret string
+	keyID         string
+	keySecret     string
+	store         PaymentStore
+	httpClient    *http.Client
 }
 
 type razorpayWebhook struct {
-	Event	string	`json:"event"`
-	Payload	struct {
+	Event   string `json:"event"`
+	Payload struct {
 		PaymentLink struct {
 			Entity struct {
-				ReferenceID	string			`json:"reference_id"`
-				Notes		map[string]string	`json:"notes"`
+				ReferenceID string            `json:"reference_id"`
+				Notes       map[string]string `json:"notes"`
 			} `json:"entity"`
 		} `json:"payment_link"`
-	}	`json:"payload"`
+	} `json:"payload"`
 }
 
-func NewPaymentHTTPHandler(channel *amqp.Channel, webhookSecret string, store PaymentStore) *PaymentHTTPHandler {
-	return &PaymentHTTPHandler{channel: channel, webhookSecret: webhookSecret, store: store}
+type verifyPaymentRequest struct {
+	OrderID    string `json:"orderID"`
+	CustomerID string `json:"customerID"`
+}
+
+func NewPaymentHTTPHandler(producer *broker.Producer, webhookSecret, keyID, keySecret string, store PaymentStore) *PaymentHTTPHandler {
+	return &PaymentHTTPHandler{
+		producer:      producer,
+		webhookSecret: webhookSecret,
+		keyID:         keyID,
+		keySecret:     keySecret,
+		store:         store,
+		httpClient:    &http.Client{Timeout: 10 * time.Second},
+	}
 }
 
 func (h *PaymentHTTPHandler) registerRoutes(router *gin.Engine) {
 	router.POST("/webhook", h.handlePaymentWebhook)
+	router.POST("/verify-payment", h.handleVerifyPayment)
+}
+
+func (h *PaymentHTTPHandler) handleVerifyPayment(c *gin.Context) {
+	var req verifyPaymentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.OrderID == "" || req.CustomerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "orderID and customerID are required"})
+		return
+	}
+
+	// In-memory / Mock offline mode
+	if h.keyID == "" || h.keySecret == "" || h.keyID == "dummy_key" {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+		defer cancel()
+		if err := h.publishOrderPaid(ctx, &pb.Order{ID: req.OrderID, CustomerID: req.CustomerID, Status: "paid"}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "paid", "verified": true})
+		return
+	}
+
+	// Query Razorpay API for recent payment links to match notes.order_id
+	url := "https://api.razorpay.com/v1/payment_links?count=25"
+	httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	httpReq.SetBasicAuth(h.keyID, h.keySecret)
+
+	resp, err := h.httpClient.Do(httpReq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to contact Razorpay: %v", err)})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var plinksResp struct {
+		PaymentLinks []struct {
+			ID     string            `json:"id"`
+			Status string            `json:"status"`
+			Notes  map[string]string `json:"notes"`
+		} `json:"payment_links"`
+	}
+
+	if err := json.Unmarshal(body, &plinksResp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse Razorpay response"})
+		return
+	}
+
+	for _, plink := range plinksResp.PaymentLinks {
+		if plink.Notes["order_id"] == req.OrderID && plink.Notes["customer_id"] == req.CustomerID {
+			if plink.Status == "paid" {
+				ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+				defer cancel()
+				if err := h.publishOrderPaid(ctx, &pb.Order{ID: req.OrderID, CustomerID: req.CustomerID, Status: "paid"}); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{"status": "paid", "verified": true, "paymentLinkId": plink.ID})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": plink.Status, "verified": false, "message": "Payment has not been completed on Razorpay yet."})
+			return
+		}
+	}
+
+	c.JSON(http.StatusNotFound, gin.H{"error": "No matching payment link found in Razorpay for this order"})
 }
 
 func (h *PaymentHTTPHandler) handlePaymentWebhook(c *gin.Context) {
@@ -123,14 +216,8 @@ func (h *PaymentHTTPHandler) publishOrderPaid(ctx context.Context, order *pb.Ord
 		return fmt.Errorf("marshal paid order: %w", err)
 	}
 
-	tr := otel.Tracer("amqp")
-	ctx, span := tr.Start(ctx, fmt.Sprintf("AMQP - publish - %s", broker.OrderPaidEvent))
-	defer span.End()
-
-	return h.channel.PublishWithContext(ctx, broker.OrderPaidEvent, "", false, false, amqp.Publishing{
-		ContentType:	"application/json",
-		Body:		body,
-		DeliveryMode:	amqp.Persistent,
-		Headers:	broker.InjectAMQPHeaders(ctx),
-	})
+	if h.producer != nil {
+		return h.producer.Publish(ctx, broker.OrderPaidEvent, []byte(order.ID), body)
+	}
+	return nil
 }

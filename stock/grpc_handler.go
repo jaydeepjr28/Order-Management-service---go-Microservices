@@ -3,26 +3,24 @@ package main
 import (
 	"context"
 
-	amqp "github.com/rabbitmq/amqp091-go"
 	pb "github.com/jaydeepjr28/commons/api"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type StockGrpcHandler struct {
 	pb.UnimplementedStockServiceServer
 
-	service	StockService
-	channel	*amqp.Channel
+	service StockService
 }
 
 func NewGRPCHandler(
 	server *grpc.Server,
-	channel *amqp.Channel,
 	stockService StockService,
 ) {
 	handler := &StockGrpcHandler{
-		service:	stockService,
-		channel:	channel,
+		service: stockService,
 	}
 
 	pb.RegisterStockServiceServer(server, handler)
@@ -49,4 +47,18 @@ func (s *StockGrpcHandler) GetItems(ctx context.Context, payload *pb.GetItemsReq
 	return &pb.GetItemsResponse{
 		Items: items,
 	}, nil
+}
+
+func (s *StockGrpcHandler) CreateItem(ctx context.Context, req *pb.CreateItemRequest) (*pb.Item, error) {
+	if req == nil || req.Item == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "item is required")
+	}
+	return s.service.CreateItem(ctx, req.Item)
+}
+
+func (s *StockGrpcHandler) UpdateItem(ctx context.Context, req *pb.UpdateItemRequest) (*pb.Item, error) {
+	if req == nil || req.Item == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "item is required")
+	}
+	return s.service.UpdateItem(ctx, req.Item)
 }

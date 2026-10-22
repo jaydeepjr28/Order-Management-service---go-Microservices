@@ -11,6 +11,8 @@ type OrdersGateway interface {
 	GetOrder(ctx context.Context, orderID, customerID string) (*pb.Order, error)
 	GetCustomerOrders(ctx context.Context, customerID string) (*pb.GetCustomerOrdersResponse, error)
 	GetItems(ctx context.Context) ([]*pb.Item, error)
+	CreateItem(ctx context.Context, item *pb.Item) (*pb.Item, error)
+	UpdateItem(ctx context.Context, item *pb.Item) (*pb.Item, error)
 }
 
 type CartGateway interface {

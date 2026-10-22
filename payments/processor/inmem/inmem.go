@@ -11,3 +11,8 @@ func NewInmem() *Inmem {
 func (i *Inmem) CreatePaymentLink(order *pb.Order) (string, error) {
 	return "/success.html?orderID=" + order.ID + "&customerID=" + order.CustomerID, nil
 }
+
+func (i *Inmem) RefundPayment(order *pb.Order) error {
+	return nil
+}
+

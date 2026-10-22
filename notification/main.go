@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"strings"
 
 	common "github.com/jaydeepjr28/commons"
 	"github.com/jaydeepjr28/commons/discovery"
@@ -11,11 +12,18 @@ import (
 )
 
 var (
-	serviceName	= "notification"
-	consulAddr	= common.EnvString("CONSUL_ADDR", "localhost:8500")
-	jaegerAddr	= common.EnvString("JAEGER_ADDR", "localhost:4318")
-	rabbitmqAddr	= common.EnvString("RABBITMQ_HOST", "localhost:5672")
-	advertisedAddr	= common.EnvString("ADVERTISED_ADDR", "localhost:2006")
+	serviceName    = "notification"
+	consulAddr     = common.EnvString("CONSUL_ADDR", "localhost:8500")
+	jaegerAddr     = common.EnvString("JAEGER_ADDR", "localhost:4318")
+	kafkaBrokers   = common.EnvString("KAFKA_BROKERS", "localhost:9092")
+	advertisedAddr = common.EnvString("ADVERTISED_ADDR", "localhost:2006")
+
+	// Gmail / SMTP Configuration
+	smtpHost       = common.EnvString("SMTP_HOST", "smtp.gmail.com")
+	smtpPort       = common.EnvString("SMTP_PORT", "587")
+	smtpEmail      = common.EnvString("SMTP_EMAIL", "")
+	smtpPassword   = common.EnvString("SMTP_PASSWORD", "")
+	smtpSenderName = common.EnvString("SMTP_SENDER_NAME", "STRATUM")
 )
 
 func main() {
@@ -36,15 +44,26 @@ func main() {
 	}
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
-	consumer, err := NewConsumer(rabbitmqAddr)
-	if err != nil {
-		log.Fatalf("failed to create consumer: %v", err)
+	brokersList := strings.Split(kafkaBrokers, ",")
+	smtpCfg := SMTPConfig{
+		Host:       smtpHost,
+		Port:       smtpPort,
+		Email:      smtpEmail,
+		Password:   smtpPassword,
+		SenderName: smtpSenderName,
 	}
+	consumer := NewConsumer(brokersList, smtpCfg)
 	defer consumer.Close()
 
-	log.Println("Notification service started, listening for events...")
+	if smtpEmail != "" && smtpPassword != "" {
+		log.Printf("Notification service configured with Gmail SMTP (%s) as %s", smtpHost, smtpEmail)
+	} else {
+		log.Println("Notification service running in Dev Sandbox mode (SMTP disabled, emails logged to terminal)")
+	}
 
-	go consumer.Listen()
+	log.Println("Notification service started, listening for Kafka events...")
+
+	go consumer.Listen(ctx)
 
 	select {}
 }

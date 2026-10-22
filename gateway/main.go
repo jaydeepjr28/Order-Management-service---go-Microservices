@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,20 +17,24 @@ import (
 	"github.com/jaydeepjr28/commons/discovery/consul"
 	"github.com/jaydeepjr28/omsv2-gateway/gateway"
 	_ "github.com/joho/godotenv/autoload"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/time/rate"
 )
 
 var (
-	serviceName	= "gateway"
-	httpAddr	= common.EnvString("HTTP_ADDR", ":8080")
-	gatewayHTTPAddr	= common.EnvString("GATEWAY_HTTP_ADDRESS", "http://localhost:8080")
-	consulAddr	= common.EnvString("CONSUL_ADDR", "localhost:8500")
-	jaegerAddr	= common.EnvString("JAEGER_ADDR", "localhost:4318")
-	advertisedAddr	= common.EnvString("ADVERTISED_ADDR", "localhost:8080")
-	amqpUser	= common.EnvString("RABBITMQ_USER", "guest")
-	amqpPass	= common.EnvString("RABBITMQ_PASS", "guest")
-	amqpHost	= common.EnvString("RABBITMQ_HOST", "localhost")
-	amqpPort	= common.EnvString("RABBITMQ_PORT", "5672")
+	serviceName     = "gateway"
+	httpAddr        = common.EnvString("HTTP_ADDR", ":8080")
+	gatewayHTTPAddr = common.EnvString("GATEWAY_HTTP_ADDRESS", "http://localhost:8080")
+	consulAddr      = common.EnvString("CONSUL_ADDR", "localhost:8500")
+	jaegerAddr      = common.EnvString("JAEGER_ADDR", "localhost:4318")
+	advertisedAddr  = common.EnvString("ADVERTISED_ADDR", "localhost:8080")
+	kafkaBrokers       = common.EnvString("KAFKA_BROKERS", "localhost:9092")
+	redisAddr          = common.EnvString("REDIS_ADDR", "localhost:6379")
+	googleClientID     = common.EnvString("GOOGLE_CLIENT_ID", "")
+	googleClientSecret = common.EnvString("GOOGLE_CLIENT_SECRET", "")
+	googleRedirectURL  = common.EnvString("GOOGLE_REDIRECT_URL", "http://localhost:8080/api/auth/google/callback")
+	frontendURL        = common.EnvString("FRONTEND_URL", "http://localhost:5173")
+	adminEmail         = common.EnvString("ADMIN_EMAIL", "admin@stratum.com")
 )
 
 func main() {
@@ -68,19 +73,41 @@ func main() {
 
 	ordersGateway := gateway.NewGRPCGateway(registry)
 
-	pgURI := common.EnvString("DB_URI", "postgres://postgres:password@localhost:5432/gateway?sslmode=disable")
+	pgURI := common.EnvString("DB_URI", "postgres://postgres:password@localhost:5435/gateway?sslmode=disable")
 	store, err := NewStore(pgURI)
 	if err != nil {
 		log.Fatalf("failed to connect to postgres: %v", err)
 	}
 
-	ch, close := broker.Connect(amqpUser, amqpPass, amqpHost, amqpPort)
-	defer func() {
-		close()
-		ch.Close()
-	}()
+	brokersList := strings.Split(kafkaBrokers, ",")
+	_ = broker.EnsureTopics(brokersList,
+		broker.UserOTPRequestedEvent,
+		broker.UserRegisteredEvent,
+		broker.OrderCreatedEvent,
+		broker.OrderPaidEvent,
+		broker.OrderFailedEvent,
+		broker.OrderCancelledEvent,
+		broker.OrderRefundedEvent,
+		broker.OrderStockFailedEvent,
+		broker.DLQTopic,
+	)
 
-	handler := NewHandler(ordersGateway, store, ordersGateway, gatewayHTTPAddr, ch)
+	producer := broker.NewProducer(brokersList)
+	defer producer.Close()
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: redisAddr,
+	})
+	defer redisClient.Close()
+
+	oauthCfg := GoogleOAuthConfig{
+		ClientID:     googleClientID,
+		ClientSecret: googleClientSecret,
+		RedirectURL:  googleRedirectURL,
+		FrontendURL:  frontendURL,
+	}
+
+	handler := NewHandler(ordersGateway, store, ordersGateway, gatewayHTTPAddr, producer, redisClient, oauthCfg, adminEmail)
 	handler.registerRoutes(router)
 
 	srv := &http.Server{

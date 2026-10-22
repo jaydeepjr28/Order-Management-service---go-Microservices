@@ -1,44 +1,42 @@
-# syntax=docker/dockerfile:1
-
 FROM golang:1.25-alpine AS builder
 
 WORKDIR /src
 
-COPY go.work go.work.sum ./
-COPY common/go.mod common/go.sum common/
-COPY gateway/go.mod gateway/go.sum gateway/
-COPY orders/go.mod orders/go.sum orders/
-COPY payments/go.mod payments/go.sum payments/
-COPY stock/go.mod stock/go.sum stock/
-COPY kitchen/go.mod kitchen/go.sum kitchen/
-COPY cart/go.mod cart/go.sum cart/
-COPY notification/go.mod notification/go.sum notification/
+# Provide the specific service to build
+ARG SERVICE
 
-RUN --mount=type=cache,target=/go/pkg/mod \
-    for module in common gateway orders payments stock kitchen cart notification; do \
-      (cd "/src/$module" && go mod download); \
+# Copy go.work files to establish the multi-module workspace
+COPY go.work go.work.sum ./
+
+# Copy the go.mod and go.sum for all modules first to leverage Docker cache
+COPY common/go.mod common/go.sum ./common/
+COPY gateway/go.mod gateway/go.sum ./gateway/
+COPY orders/go.mod orders/go.sum ./orders/
+COPY payments/go.mod payments/go.sum ./payments/
+COPY stock/go.mod stock/go.sum ./stock/
+COPY kitchen/go.mod kitchen/go.sum ./kitchen/
+COPY cart/go.mod cart/go.sum ./cart/
+COPY notification/go.mod notification/go.sum ./notification/
+
+# Download dependencies for all modules
+RUN for module in common gateway orders payments stock kitchen cart notification; do \
+      (cd ./$module && go mod download); \
     done
 
-COPY common/ common/
-COPY gateway/ gateway/
-COPY orders/ orders/
-COPY payments/ payments/
-COPY stock/ stock/
-COPY kitchen/ kitchen/
-COPY cart/ cart/
-COPY notification/ notification/
+# Copy the rest of the source code
+COPY . .
 
-ARG SERVICE
-RUN mkdir -p /out && test -n "$SERVICE" && test -f "/src/$SERVICE/go.mod"
-RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg/mod \
-    CGO_ENABLED=0 go build -C "$SERVICE" -trimpath -ldflags='-s -w' -o /out/main .
+# Build the specific microservice
+RUN cd ${SERVICE} && CGO_ENABLED=0 GOOS=linux go build -o /bin/app .
 
-FROM alpine:3.22 AS runtime
+# Final Stage
+FROM alpine:latest
 
-RUN addgroup -S app && adduser -S -G app app
 WORKDIR /app
-COPY --from=builder /out/main /app/main
 
-USER app
-ENTRYPOINT ["/app/main"]
+# Install root CA certificates if any service needs to make outbound HTTPS calls (e.g. Razorpay)
+RUN apk --no-cache add ca-certificates tzdata
+
+COPY --from=builder /bin/app .
+
+CMD ["./app"]

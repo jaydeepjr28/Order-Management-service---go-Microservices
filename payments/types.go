@@ -8,4 +8,6 @@ import (
 
 type PaymentsService interface {
 	CreatePayment(context.Context, *pb.Order) (string, error)
+	RefundPayment(context.Context, *pb.Order) error
 }
+

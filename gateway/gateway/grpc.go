@@ -17,72 +17,94 @@ func NewGRPCGateway(registry discovery.Registry) *gateway {
 }
 
 func (g *gateway) CreateOrder(ctx context.Context, p *pb.CreateOrderRequest) (*pb.Order, error) {
-
 	conn, err := discovery.ServiceConnection(context.Background(), "orders", g.registry)
 	if err != nil {
-		log.Fatalf("Failed to dial server: %v", err)
+		log.Printf("[Gateway gRPC] Failed to dial orders service: %v", err)
+		return nil, err
 	}
 	defer conn.Close()
 
 	c := pb.NewOrderServiceClient(conn)
-
 	return c.CreateOrder(ctx, &pb.CreateOrderRequest{
-		CustomerID:	p.CustomerID,
-		Items:		p.Items,
+		CustomerID: p.CustomerID,
+		Items:      p.Items,
 	})
 }
 
 func (g *gateway) GetOrder(ctx context.Context, orderID, customerID string) (*pb.Order, error) {
 	conn, err := discovery.ServiceConnection(context.Background(), "orders", g.registry)
 	if err != nil {
-		log.Fatalf("Failed to dial server: %v", err)
+		log.Printf("[Gateway gRPC] Failed to dial orders service: %v", err)
+		return nil, err
 	}
 	defer conn.Close()
 
 	c := pb.NewOrderServiceClient(conn)
-
 	return c.GetOrder(ctx, &pb.GetOrderRequest{
-		OrderID:	orderID,
-		CustomerID:	customerID,
+		OrderID:    orderID,
+		CustomerID: customerID,
 	})
 }
 
 func (g *gateway) GetCustomerOrders(ctx context.Context, customerID string) (*pb.GetCustomerOrdersResponse, error) {
 	conn, err := discovery.ServiceConnection(context.Background(), "orders", g.registry)
 	if err != nil {
-		log.Fatalf("Failed to dial server: %v", err)
+		log.Printf("[Gateway gRPC] Failed to dial orders service: %v", err)
+		return nil, err
 	}
 	defer conn.Close()
 
 	c := pb.NewOrderServiceClient(conn)
-
 	return c.GetCustomerOrders(ctx, &pb.GetCustomerOrdersRequest{
 		CustomerID: customerID,
 	})
 }
 
 func (g *gateway) GetItems(ctx context.Context) ([]*pb.Item, error) {
-
 	conn, err := discovery.ServiceConnection(context.Background(), "stock", g.registry)
 	if err != nil {
-		log.Fatalf("Failed to dial server: %v", err)
+		log.Printf("[Gateway gRPC] Failed to dial stock service: %v", err)
+		return nil, err
 	}
 	defer conn.Close()
 
 	c := pb.NewStockServiceClient(conn)
-
 	res, err := c.GetItems(ctx, &pb.GetItemsRequest{})
 	if err != nil {
 		return nil, err
 	}
-
 	return res.Items, nil
+}
+
+func (g *gateway) CreateItem(ctx context.Context, item *pb.Item) (*pb.Item, error) {
+	conn, err := discovery.ServiceConnection(context.Background(), "stock", g.registry)
+	if err != nil {
+		log.Printf("[Gateway gRPC] Failed to dial stock service: %v", err)
+		return nil, err
+	}
+	defer conn.Close()
+
+	c := pb.NewStockServiceClient(conn)
+	return c.CreateItem(ctx, &pb.CreateItemRequest{Item: item})
+}
+
+func (g *gateway) UpdateItem(ctx context.Context, item *pb.Item) (*pb.Item, error) {
+	conn, err := discovery.ServiceConnection(context.Background(), "stock", g.registry)
+	if err != nil {
+		log.Printf("[Gateway gRPC] Failed to dial stock service: %v", err)
+		return nil, err
+	}
+	defer conn.Close()
+
+	c := pb.NewStockServiceClient(conn)
+	return c.UpdateItem(ctx, &pb.UpdateItemRequest{Item: item})
 }
 
 func (g *gateway) AddItem(ctx context.Context, req *pb.AddItemRequest) (*pb.Cart, error) {
 	conn, err := discovery.ServiceConnection(context.Background(), "cart", g.registry)
 	if err != nil {
-		log.Fatalf("Failed to dial server: %v", err)
+		log.Printf("[Gateway gRPC] Failed to dial cart service: %v", err)
+		return nil, err
 	}
 	defer conn.Close()
 
@@ -93,7 +115,8 @@ func (g *gateway) AddItem(ctx context.Context, req *pb.AddItemRequest) (*pb.Cart
 func (g *gateway) RemoveItem(ctx context.Context, req *pb.RemoveItemRequest) (*pb.Cart, error) {
 	conn, err := discovery.ServiceConnection(context.Background(), "cart", g.registry)
 	if err != nil {
-		log.Fatalf("Failed to dial server: %v", err)
+		log.Printf("[Gateway gRPC] Failed to dial cart service: %v", err)
+		return nil, err
 	}
 	defer conn.Close()
 
@@ -104,7 +127,8 @@ func (g *gateway) RemoveItem(ctx context.Context, req *pb.RemoveItemRequest) (*p
 func (g *gateway) GetCart(ctx context.Context, req *pb.GetCartRequest) (*pb.Cart, error) {
 	conn, err := discovery.ServiceConnection(context.Background(), "cart", g.registry)
 	if err != nil {
-		log.Fatalf("Failed to dial server: %v", err)
+		log.Printf("[Gateway gRPC] Failed to dial cart service: %v", err)
+		return nil, err
 	}
 	defer conn.Close()
 
@@ -115,7 +139,8 @@ func (g *gateway) GetCart(ctx context.Context, req *pb.GetCartRequest) (*pb.Cart
 func (g *gateway) ClearCart(ctx context.Context, req *pb.ClearCartRequest) (*pb.Cart, error) {
 	conn, err := discovery.ServiceConnection(context.Background(), "cart", g.registry)
 	if err != nil {
-		log.Fatalf("Failed to dial server: %v", err)
+		log.Printf("[Gateway gRPC] Failed to dial cart service: %v", err)
+		return nil, err
 	}
 	defer conn.Close()
 

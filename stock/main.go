@@ -5,29 +5,28 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
-	_ "github.com/joho/godotenv/autoload"
 	common "github.com/jaydeepjr28/commons"
 	"github.com/jaydeepjr28/commons/broker"
 	"github.com/jaydeepjr28/commons/discovery"
 	"github.com/jaydeepjr28/commons/discovery/consul"
 	"github.com/jaydeepjr28/omsv2-stock/gateway"
+	_ "github.com/joho/godotenv/autoload"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
 var (
-	serviceName	= "stock"
-	grpcAddr	= common.EnvString("GRPC_ADDR", "localhost:2002")
-	consulAddr	= common.EnvString("CONSUL_ADDR", "localhost:8500")
-	amqpUser	= common.EnvString("RABBITMQ_USER", "guest")
-	amqpPass	= common.EnvString("RABBITMQ_PASS", "guest")
-	amqpHost	= common.EnvString("RABBITMQ_HOST", "localhost")
-	amqpPort	= common.EnvString("RABBITMQ_PORT", "5672")
-	jaegerAddr	= common.EnvString("JAEGER_ADDR", "localhost:4318")
-	advertisedAddr	= common.EnvString("ADVERTISED_ADDR", "localhost:2002")
+	serviceName    = "stock"
+	grpcAddr       = common.EnvString("GRPC_ADDR", "localhost:2002")
+	consulAddr     = common.EnvString("CONSUL_ADDR", "localhost:8500")
+	kafkaBrokers   = common.EnvString("KAFKA_BROKERS", "localhost:9092")
+	jaegerAddr     = common.EnvString("JAEGER_ADDR", "localhost:4318")
+	advertisedAddr = common.EnvString("ADVERTISED_ADDR", "localhost:2002")
+	dbURI          = common.EnvString("DB_URI", "postgres://postgres:password@localhost:5436/stock?sslmode=disable")
 )
 
 func main() {
@@ -63,11 +62,17 @@ func main() {
 
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
-	ch, close := broker.Connect(amqpUser, amqpPass, amqpHost, amqpPort)
-	defer func() {
-		close()
-		ch.Close()
-	}()
+	brokersList := strings.Split(kafkaBrokers, ",")
+	producer := broker.NewProducer(brokersList)
+	defer producer.Close()
+
+	stockTopics := []string{
+		broker.OrderPaidEvent,
+		broker.OrderCancelledEvent,
+		broker.OrderFailedEvent,
+	}
+	reader := broker.NewConsumerGroup(brokersList, "stock-service-group", stockTopics)
+	defer reader.Close()
 
 	grpcServer := grpc.NewServer()
 
@@ -77,16 +82,16 @@ func main() {
 	}
 	defer l.Close()
 
-	store := NewStore()
+	store := NewStore(dbURI)
 	svc := NewService(store)
 	svcWithTelemetry := NewTelemetryMiddleware(svc)
 
-	NewGRPCHandler(grpcServer, ch, svcWithTelemetry)
+	NewGRPCHandler(grpcServer, svcWithTelemetry)
 
 	ordersGateway := gateway.New(registry)
 	consumer := NewConsumer(svcWithTelemetry, ordersGateway)
 
-	go consumer.Listen(ch)
+	go consumer.Listen(ctx, reader, producer)
 
 	logger.Info("Starting gRPC server", zap.String("port", grpcAddr))
 

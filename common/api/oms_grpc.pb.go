@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.35.1
-// source: oms.proto
+// source: api/oms.proto
 
 package api
 
@@ -237,12 +237,14 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "oms.proto",
+	Metadata: "api/oms.proto",
 }
 
 const (
 	StockService_CheckIfItemIsInStock_FullMethodName = "/api.StockService/CheckIfItemIsInStock"
 	StockService_GetItems_FullMethodName             = "/api.StockService/GetItems"
+	StockService_CreateItem_FullMethodName           = "/api.StockService/CreateItem"
+	StockService_UpdateItem_FullMethodName           = "/api.StockService/UpdateItem"
 )
 
 // StockServiceClient is the client API for StockService service.
@@ -254,6 +256,8 @@ type StockServiceClient interface {
 	// CheckIfItemIsInStock verifies if the requested quantities are available and returns the full Item details.
 	CheckIfItemIsInStock(ctx context.Context, in *CheckIfItemIsInStockRequest, opts ...grpc.CallOption) (*CheckIfItemIsInStockResponse, error)
 	GetItems(ctx context.Context, in *GetItemsRequest, opts ...grpc.CallOption) (*GetItemsResponse, error)
+	CreateItem(ctx context.Context, in *CreateItemRequest, opts ...grpc.CallOption) (*Item, error)
+	UpdateItem(ctx context.Context, in *UpdateItemRequest, opts ...grpc.CallOption) (*Item, error)
 }
 
 type stockServiceClient struct {
@@ -284,6 +288,26 @@ func (c *stockServiceClient) GetItems(ctx context.Context, in *GetItemsRequest, 
 	return out, nil
 }
 
+func (c *stockServiceClient) CreateItem(ctx context.Context, in *CreateItemRequest, opts ...grpc.CallOption) (*Item, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Item)
+	err := c.cc.Invoke(ctx, StockService_CreateItem_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) UpdateItem(ctx context.Context, in *UpdateItemRequest, opts ...grpc.CallOption) (*Item, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Item)
+	err := c.cc.Invoke(ctx, StockService_UpdateItem_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StockServiceServer is the server API for StockService service.
 // All implementations must embed UnimplementedStockServiceServer
 // for forward compatibility.
@@ -293,6 +317,8 @@ type StockServiceServer interface {
 	// CheckIfItemIsInStock verifies if the requested quantities are available and returns the full Item details.
 	CheckIfItemIsInStock(context.Context, *CheckIfItemIsInStockRequest) (*CheckIfItemIsInStockResponse, error)
 	GetItems(context.Context, *GetItemsRequest) (*GetItemsResponse, error)
+	CreateItem(context.Context, *CreateItemRequest) (*Item, error)
+	UpdateItem(context.Context, *UpdateItemRequest) (*Item, error)
 	mustEmbedUnimplementedStockServiceServer()
 }
 
@@ -308,6 +334,12 @@ func (UnimplementedStockServiceServer) CheckIfItemIsInStock(context.Context, *Ch
 }
 func (UnimplementedStockServiceServer) GetItems(context.Context, *GetItemsRequest) (*GetItemsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetItems not implemented")
+}
+func (UnimplementedStockServiceServer) CreateItem(context.Context, *CreateItemRequest) (*Item, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateItem not implemented")
+}
+func (UnimplementedStockServiceServer) UpdateItem(context.Context, *UpdateItemRequest) (*Item, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateItem not implemented")
 }
 func (UnimplementedStockServiceServer) mustEmbedUnimplementedStockServiceServer() {}
 func (UnimplementedStockServiceServer) testEmbeddedByValue()                      {}
@@ -366,6 +398,42 @@ func _StockService_GetItems_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StockService_CreateItem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateItemRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).CreateItem(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_CreateItem_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).CreateItem(ctx, req.(*CreateItemRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_UpdateItem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateItemRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).UpdateItem(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_UpdateItem_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).UpdateItem(ctx, req.(*UpdateItemRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StockService_ServiceDesc is the grpc.ServiceDesc for StockService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -381,9 +449,17 @@ var StockService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "GetItems",
 			Handler:    _StockService_GetItems_Handler,
 		},
+		{
+			MethodName: "CreateItem",
+			Handler:    _StockService_CreateItem_Handler,
+		},
+		{
+			MethodName: "UpdateItem",
+			Handler:    _StockService_UpdateItem_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "oms.proto",
+	Metadata: "api/oms.proto",
 }
 
 const (
@@ -567,7 +643,7 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "oms.proto",
+	Metadata: "api/oms.proto",
 }
 
 const (
@@ -789,5 +865,5 @@ var CartService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "oms.proto",
+	Metadata: "api/oms.proto",
 }

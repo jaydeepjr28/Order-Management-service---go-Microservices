@@ -31,3 +31,8 @@ func (s *service) CreatePayment(ctx context.Context, o *pb.Order) (string, error
 
 	return link, nil
 }
+
+func (s *service) RefundPayment(ctx context.Context, o *pb.Order) error {
+	return s.processor.RefundPayment(o)
+}
+

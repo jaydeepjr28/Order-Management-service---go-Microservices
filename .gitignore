@@ -1,5 +1,8 @@
 */tmp/
 build-errors.log
-frontend/
+frontend/node_modules/
+frontend/dist/
 .env
 .cache/
+.env.bak
+*.exe

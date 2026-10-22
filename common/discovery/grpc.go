@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math/rand"
 
@@ -18,6 +19,9 @@ func ServiceConnection(ctx context.Context, serviceName string, registry Registr
 	}
 
 	log.Printf("Discovered %d instances of %s", len(addrs), serviceName)
+	if len(addrs) == 0 {
+		return nil, fmt.Errorf("service %q has no available instances in discovery registry", serviceName)
+	}
 
 	return grpc.Dial(
 		addrs[rand.Intn(len(addrs))],

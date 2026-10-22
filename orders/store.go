@@ -57,9 +57,15 @@ func (s *store) Create(ctx context.Context, o Order) (string, error) {
 func (s *store) Get(ctx context.Context, id, customerID string) (*Order, error) {
 	var o Order
 	var itemsJSON []byte
+	var err error
 
-	query := `SELECT id, customer_id, status, payment_link, items FROM orders WHERE id = $1 AND customer_id = $2`
-	err := s.db.QueryRowContext(ctx, query, id, customerID).Scan(&o.ID, &o.CustomerID, &o.Status, &o.PaymentLink, &itemsJSON)
+	if customerID == "" || customerID == "*" || customerID == "admin" {
+		query := `SELECT id, customer_id, status, payment_link, items FROM orders WHERE id = $1`
+		err = s.db.QueryRowContext(ctx, query, id).Scan(&o.ID, &o.CustomerID, &o.Status, &o.PaymentLink, &itemsJSON)
+	} else {
+		query := `SELECT id, customer_id, status, payment_link, items FROM orders WHERE id = $1 AND customer_id = $2`
+		err = s.db.QueryRowContext(ctx, query, id, customerID).Scan(&o.ID, &o.CustomerID, &o.Status, &o.PaymentLink, &itemsJSON)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +78,11 @@ func (s *store) Get(ctx context.Context, id, customerID string) (*Order, error) 
 }
 
 func (s *store) Update(ctx context.Context, id string, newOrder *pb.Order) error {
-	query := `UPDATE orders SET payment_link = $1, status = $2 WHERE id = $3`
+	query := `
+	UPDATE orders
+	SET payment_link = CASE WHEN $1 != '' THEN $1 ELSE payment_link END,
+	    status = CASE WHEN $2 != '' THEN $2 ELSE status END
+	WHERE id = $3`
 	_, err := s.db.ExecContext(ctx, query, newOrder.PaymentLink, newOrder.Status, id)
 	return err
 }
@@ -104,3 +114,32 @@ func (s *store) GetByCustomer(ctx context.Context, customerID string) ([]*Order,
 
 	return orders, nil
 }
+
+func (s *store) GetAll(ctx context.Context) ([]*Order, error) {
+	query := `SELECT id, customer_id, status, payment_link, items FROM orders ORDER BY id DESC`
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []*Order
+	for rows.Next() {
+		var o Order
+		var itemsJSON []byte
+		if err := rows.Scan(&o.ID, &o.CustomerID, &o.Status, &o.PaymentLink, &itemsJSON); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(itemsJSON, &o.Items); err != nil {
+			return nil, err
+		}
+		orders = append(orders, &o)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return orders, nil
+}
+

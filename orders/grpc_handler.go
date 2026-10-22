@@ -4,13 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	common "github.com/jaydeepjr28/commons"
 	pb "github.com/jaydeepjr28/commons/api"
 	"github.com/jaydeepjr28/commons/broker"
-	amqp "github.com/rabbitmq/amqp091-go"
-	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -19,14 +16,14 @@ import (
 type grpcHandler struct {
 	pb.UnimplementedOrderServiceServer
 
-	service	OrdersService
-	channel	*amqp.Channel
+	service  OrdersService
+	producer *broker.Producer
 }
 
-func NewGRPCHandler(grpcServer *grpc.Server, service OrdersService, channel *amqp.Channel) {
+func NewGRPCHandler(grpcServer *grpc.Server, service OrdersService, producer *broker.Producer) {
 	handler := &grpcHandler{
-		service:	service,
-		channel:	channel,
+		service:  service,
+		producer: producer,
 	}
 	pb.RegisterOrderServiceServer(grpcServer, handler)
 }
@@ -44,17 +41,12 @@ func (h *grpcHandler) GetCustomerOrders(ctx context.Context, p *pb.GetCustomerOr
 }
 
 func (h *grpcHandler) CreateOrder(ctx context.Context, p *pb.CreateOrderRequest) (*pb.Order, error) {
-
-	tr := otel.Tracer("amqp")
-	amqpContext, messageSpan := tr.Start(ctx, fmt.Sprintf("AMQP - publish - %s", broker.OrderCreatedEvent))
-	defer messageSpan.End()
-
-	items, err := h.service.ValidateOrder(amqpContext, p)
+	items, err := h.service.ValidateOrder(ctx, p)
 	if err != nil {
 		return nil, mapServiceError(err)
 	}
 
-	o, err := h.service.CreateOrder(amqpContext, p, items)
+	o, err := h.service.CreateOrder(ctx, p, items)
 	if err != nil {
 		return nil, mapServiceError(err)
 	}
@@ -64,14 +56,9 @@ func (h *grpcHandler) CreateOrder(ctx context.Context, p *pb.CreateOrderRequest)
 		return nil, err
 	}
 
-	headers := broker.InjectAMQPHeaders(amqpContext)
-
-	h.channel.PublishWithContext(amqpContext, broker.OrderCreatedEvent, "", false, false, amqp.Publishing{
-		ContentType:	"application/json",
-		Body:		marshalledOrder,
-		DeliveryMode:	amqp.Persistent,
-		Headers:	headers,
-	})
+	if h.producer != nil {
+		_ = h.producer.Publish(ctx, broker.OrderCreatedEvent, []byte(o.ID), marshalledOrder)
+	}
 
 	return o, nil
 }

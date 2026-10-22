@@ -36,3 +36,25 @@ func (s *TelemetryMiddleware) DecrementItems(ctx context.Context, items []*pb.It
 
 	return s.next.DecrementItems(ctx, items)
 }
+
+func (s *TelemetryMiddleware) IncrementItems(ctx context.Context, items []*pb.Item) error {
+	span := trace.SpanFromContext(ctx)
+	span.AddEvent(fmt.Sprintf("IncrementItems: %v", items))
+
+	return s.next.IncrementItems(ctx, items)
+}
+
+
+func (s *TelemetryMiddleware) CreateItem(ctx context.Context, item *pb.Item) (*pb.Item, error) {
+	span := trace.SpanFromContext(ctx)
+	span.AddEvent(fmt.Sprintf("CreateItem: %v", item.ID))
+
+	return s.next.CreateItem(ctx, item)
+}
+
+func (s *TelemetryMiddleware) UpdateItem(ctx context.Context, item *pb.Item) (*pb.Item, error) {
+	span := trace.SpanFromContext(ctx)
+	span.AddEvent(fmt.Sprintf("UpdateItem: %v", item.ID))
+
+	return s.next.UpdateItem(ctx, item)
+}

@@ -42,6 +42,7 @@ func (s *Service) CheckIfItemAreInStock(ctx context.Context, p []*pb.ItemsWithQu
 					Name:		stockItem.Name,
 					PriceID:	stockItem.PriceID,
 					Quantity:	reqItem.Quantity,
+					Price:		stockItem.Price,
 				})
 			}
 		}
@@ -56,4 +57,16 @@ func (s *Service) GetItems(ctx context.Context, ids []string) ([]*pb.Item, error
 
 func (s *Service) DecrementItems(ctx context.Context, items []*pb.Item) error {
 	return s.store.DecrementItems(ctx, items)
+}
+
+func (s *Service) IncrementItems(ctx context.Context, items []*pb.Item) error {
+	return s.store.IncrementItems(ctx, items)
+}
+
+func (s *Service) CreateItem(ctx context.Context, item *pb.Item) (*pb.Item, error) {
+	return s.store.CreateItem(ctx, item)
+}
+
+func (s *Service) UpdateItem(ctx context.Context, item *pb.Item) (*pb.Item, error) {
+	return s.store.UpdateItem(ctx, item)
 }

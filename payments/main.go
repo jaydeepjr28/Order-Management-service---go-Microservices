@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,21 +26,18 @@ import (
 )
 
 var (
-	serviceName		= "payment"
-	amqpUser		= common.EnvString("RABBITMQ_USER", "guest")
-	amqpPass		= common.EnvString("RABBITMQ_PASS", "guest")
-	amqpHost		= common.EnvString("RABBITMQ_HOST", "localhost")
-	amqpPort		= common.EnvString("RABBITMQ_PORT", "5672")
-	grpcAddr		= common.EnvString("GRPC_ADDRESS", "localhost:2001")
-	consulAddr		= common.EnvString("CONSUL_ADDR", "localhost:8500")
-	httpAddr		= common.EnvString("HTTP_ADDR", "localhost:8081")
-	razorpayKeyID		= common.EnvString("RAZORPAY_KEY_ID", "")
-	razorpayKeySecret	= common.EnvString("RAZORPAY_KEY_SECRET", "")
-	razorpayWebhookSecret	= common.EnvString("RAZORPAY_WEBHOOK_SECRET", "")
-	razorpayItemPrices	= common.EnvString("RAZORPAY_ITEM_PRICES", "")
-	gatewayHTTPAddr		= common.EnvString("GATEWAY_HTTP_ADDRESS", "http://localhost:8080")
-	jaegerAddr		= common.EnvString("JAEGER_ADDR", "localhost:4318")
-	advertisedAddr		= common.EnvString("ADVERTISED_ADDR", "localhost:2001")
+	serviceName           = "payment"
+	kafkaBrokers          = common.EnvString("KAFKA_BROKERS", "localhost:9092")
+	grpcAddr              = common.EnvString("GRPC_ADDRESS", "localhost:2001")
+	consulAddr            = common.EnvString("CONSUL_ADDR", "localhost:8500")
+	httpAddr              = common.EnvString("HTTP_ADDR", "localhost:8081")
+	razorpayKeyID         = common.EnvString("RAZORPAY_KEY_ID", "")
+	razorpayKeySecret     = common.EnvString("RAZORPAY_KEY_SECRET", "")
+	razorpayWebhookSecret = common.EnvString("RAZORPAY_WEBHOOK_SECRET", "")
+	razorpayItemPrices    = common.EnvString("RAZORPAY_ITEM_PRICES", "")
+	gatewayHTTPAddr       = common.EnvString("GATEWAY_HTTP_ADDRESS", "http://localhost:8080")
+	jaegerAddr            = common.EnvString("JAEGER_ADDR", "localhost:4318")
+	advertisedAddr        = common.EnvString("ADVERTISED_ADDR", "localhost:2001")
 )
 
 func main() {
@@ -76,11 +74,9 @@ func main() {
 	}()
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
-	ch, close := broker.Connect(amqpUser, amqpPass, amqpHost, amqpPort)
-	defer func() {
-		close()
-		ch.Close()
-	}()
+	brokersList := strings.Split(kafkaBrokers, ",")
+	producer := broker.NewProducer(brokersList)
+	defer producer.Close()
 
 	var paymentProcessor processor.PaymentProcessor
 	if razorpayKeyID == "dummy_key" || razorpayKeyID == "" {
@@ -97,13 +93,22 @@ func main() {
 	svc := NewService(paymentProcessor, gateway)
 	svcWithTelemetry := NewTelemetryMiddleware(svc)
 
-	amqpConsumer := NewConsumer(svcWithTelemetry)
-	go amqpConsumer.Listen(ch)
+	paymentTopics := []string{
+		broker.OrderCreatedEvent,
+		broker.OrderCancelledEvent,
+		broker.OrderFailedEvent,
+		broker.OrderStockFailedEvent,
+	}
+	reader := broker.NewConsumerGroup(brokersList, "payments-service-group", paymentTopics)
+	defer reader.Close()
+
+	consumer := NewConsumer(svcWithTelemetry)
+	go consumer.Listen(ctx, reader, producer)
 
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 
-	httpServer := NewPaymentHTTPHandler(ch, razorpayWebhookSecret, paymentStore)
+	httpServer := NewPaymentHTTPHandler(producer, razorpayWebhookSecret, razorpayKeyID, razorpayKeySecret, paymentStore)
 	httpServer.registerRoutes(router)
 
 	srv := &http.Server{

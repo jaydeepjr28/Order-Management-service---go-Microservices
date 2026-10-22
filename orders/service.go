@@ -27,7 +27,13 @@ func (s *service) GetOrder(ctx context.Context, p *pb.GetOrderRequest) (*pb.Orde
 }
 
 func (s *service) GetCustomerOrders(ctx context.Context, p *pb.GetCustomerOrdersRequest) (*pb.GetCustomerOrdersResponse, error) {
-	orders, err := s.store.GetByCustomer(ctx, p.CustomerID)
+	var orders []*Order
+	var err error
+	if p.CustomerID == "" || p.CustomerID == "*" || p.CustomerID == "all" {
+		orders, err = s.store.GetAll(ctx)
+	} else {
+		orders, err = s.store.GetByCustomer(ctx, p.CustomerID)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -1,0 +1,103 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 45 15% 98%;      /* #FAFAF8 warm off-white */
+    --foreground: 120 4% 9%;       /* #141614 near-black */
+
+    --card: 0 0% 100%;             /* #FFFFFF pure white card */
+    --card-foreground: 120 4% 9%;
+
+    --surface: 45 10% 96%;         /* #F5F5F0 */
+    --surface-hover: 45 10% 93%;
+
+    --primary: 161 66% 17%;        /* #0F4A36 deep forest emerald */
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 161 68% 12%;
+    --primary-light: 154 36% 93%;
+
+    --secondary: 45 8% 92%;
+    --secondary-foreground: 120 4% 15%;
+
+    --muted: 45 8% 92%;
+    --muted-foreground: 45 4% 45%;
+
+    --accent: 154 36% 93%;
+    --accent-foreground: 161 66% 17%;
+
+    --border: 45 10% 89%;          /* #E5E5E0 subtle neutral border */
+    --input: 45 10% 89%;
+    --ring: 161 66% 17%;
+
+    --radius: 0.625rem;            /* 10px clean modern radius */
+  }
+
+  .dark {
+    --background: 120 3% 7%;       /* #111311 */
+    --foreground: 45 15% 96%;      /* #F5F5F0 */
+
+    --card: 120 3% 10%;            /* #171A17 */
+    --card-foreground: 45 15% 96%;
+
+    --surface: 120 3% 12%;
+    --surface-hover: 120 3% 16%;
+
+    --primary: 158 64% 42%;        /* #26AF7D bright emerald */
+    --primary-foreground: 161 70% 8%;
+    --primary-hover: 158 64% 48%;
+    --primary-light: 160 30% 15%;
+
+    --secondary: 120 3% 15%;
+    --secondary-foreground: 45 15% 90%;
+
+    --muted: 120 3% 14%;
+    --muted-foreground: 45 4% 60%;
+
+    --accent: 160 30% 15%;
+    --accent-foreground: 158 64% 50%;
+
+    --border: 120 3% 18%;
+    --input: 120 3% 18%;
+    --ring: 158 64% 42%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html, body {
+    overflow-x: hidden;
+    width: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased min-h-screen selection:bg-primary-light selection:text-primary;
+    letter-spacing: -0.011em;
+  }
+}
+
+/* Custom Editorial Headings */
+.font-editorial {
+  font-family: 'Playfair Display', Georgia, serif;
+  letter-spacing: -0.02em;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.4);
+}

@@ -18,6 +18,7 @@ type OrdersStore interface {
 	Create(context.Context, Order) (string, error)
 	Get(ctx context.Context, id, customerID string) (*Order, error)
 	GetByCustomer(ctx context.Context, customerID string) ([]*Order, error)
+	GetAll(ctx context.Context) ([]*Order, error)
 	Update(ctx context.Context, id string, o *pb.Order) error
 }
 
