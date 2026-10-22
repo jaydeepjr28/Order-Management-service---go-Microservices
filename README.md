@@ -1,48 +1,79 @@
-# ⚡ STRATUM — High-Performance Distributed Order Management System (Go Microservices & Kafka)
+# ⚡ STRATUM — High-Performance Distributed Order Management System
 
 [![Go Version](https://img.shields.io/badge/Go-1.20+-00ADD8?style=for-the-badge&logo=go)](https://golang.org)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org)
 [![gRPC](https://img.shields.io/badge/gRPC-Protobuf-244c5a?style=for-the-badge&logo=grpc)](https://grpc.io)
-[![Apache Kafka](https://img.shields.io/badge/Apache_Kafka-Event_Streaming-231F20?style=for-the-badge&logo=apachekafka)](https://kafka.apache.org)
+[![Apache Kafka](https://img.shields.io/badge/Apache_Kafka-KRaft_Mode-231F20?style=for-the-badge&logo=apachekafka)](https://kafka.apache.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=for-the-badge&logo=postgresql)](https://www.postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-Cache-DC382D?style=for-the-badge&logo=redis)](https://redis.io)
 [![HashiCorp Consul](https://img.shields.io/badge/Consul-Service_Discovery-F24C53?style=for-the-badge&logo=consul)](https://www.consul.io)
-[![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-Distributed_Tracing-F5A800?style=for-the-badge&logo=opentelemetry)](https://opentelemetry.io)
+[![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-Tracing-F5A800?style=for-the-badge&logo=opentelemetry)](https://opentelemetry.io)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker)](https://www.docker.com)
 
-A production-grade, event-driven Order Management System backend engineered in **Go**. The system showcases modern distributed systems design patterns: **Database-per-Service**, dual-protocol communication (**synchronous gRPC** for critical low-latency paths and **asynchronous Apache Kafka topics** for decoupled eventual consistency and event streaming), dynamic service discovery via **HashiCorp Consul**, end-to-end distributed tracing via **OpenTelemetry & Jaeger**, and granular **Role-Based Access Control (RBAC)**.
+A production-grade, event-driven Order Management & Commerce System engineered in **Go** and **React 19**. **STRATUM** showcases modern distributed systems architecture: **Database-per-Service**, dual-protocol communication (**synchronous gRPC** for low-latency reservations and **asynchronous Apache Kafka topics** for resilient decoupled transactions), dynamic service discovery via **HashiCorp Consul**, full-stack **Google OAuth 2.0**, automated **Gmail SMTP notifications**, end-to-end distributed tracing via **OpenTelemetry & Jaeger**, and granular **Role-Based Access Control (RBAC)**.
 
 ---
 
 ## 📑 Table of Contents
 
-- [Distributed System Architecture](#-distributed-system-architecture)
-- [Core Architectural Patterns & Design Decisions](#-core-architectural-patterns--design-decisions)
-- [Microservices Catalog & Technical Deep Dive](#-microservices-catalog--technical-deep-dive)
-  - [1. API Gateway (`gateway`)](#1-api-gateway-gateway)
-  - [2. Orders Service (`orders`)](#2-orders-service-orders)
-  - [3. Payments Service (`payments`)](#3-payments-service-payments)
-  - [4. Stock Service (`stock`)](#4-stock-service-stock)
-  - [5. Kitchen Service (`kitchen`)](#5-kitchen-service-kitchen)
-  - [6. Cart Service (`cart`)](#6-cart-service-cart)
-  - [7. Notification Service (`notification`)](#7-notification-service-notification)
-  - [8. Shared Commons (`common`)](#8-shared-commons-common)
-- [End-to-End Transaction Sequence](#-end-to-end-transaction-sequence)
-- [Protobuf Contracts (`oms.proto`)](#-protobuf-contracts-omsproto)
-- [API Gateway REST Specification](#-api-gateway-rest-specification)
-  - [Authentication & Users](#authentication--users)
-  - [Cart Operations](#cart-operations)
-  - [Order Management](#order-management)
-  - [Inventory Catalog](#inventory-catalog)
-  - [Admin Management Endpoints (RBAC Restricted)](#admin-management-endpoints-rbac-restricted)
-  - [Payments Webhook](#payments-webhook)
-- [Reliability, Fault Tolerance & DLQ](#-reliability-fault-tolerance--dlq)
-- [Distributed Tracing & Context Propagation](#-distributed-tracing--context-propagation)
-- [Environment Configuration](#-environment-configuration)
-- [Running the Backend](#-running-the-backend)
-  - [Option A: Fully Containerized (Docker Compose)](#option-a-fully-containerized-docker-compose)
-  - [Option B: Hybrid Development Mode](#option-b-hybrid-development-mode)
-- [Administrative Bootstrap](#-administrative-bootstrap)
-- [Observability & Infrastructure Consoles](#-observability--infrastructure-consoles)
+1. [Project Overview & Purpose](#-project-overview--purpose)
+2. [Key Features](#-key-features)
+3. [Technology Stack](#-technology-stack)
+4. [Distributed System Architecture](#-distributed-system-architecture)
+5. [Folder Structure](#-folder-structure)
+6. [Configuration & Environment Variables](#-configuration--environment-variables)
+7. [Database Setup & Schemas](#-database-setup--schemas)
+8. [Setup & Installation](#-setup--installation)
+9. [Running the Project](#-running-the-project)
+   - [Development Mode (Hybrid)](#option-a-development-mode-hybrid)
+   - [Production Mode (Docker Compose)](#option-b-production-mode-docker-compose)
+10. [API Specification (REST & gRPC)](#-api-specification-rest--grpc)
+11. [AI Agents & Developer Pair Programming](#-ai-agents--developer-pair-programming)
+12. [Usage Workflows](#-usage-workflows)
+13. [Contributing Guidelines](#-contributing-guidelines)
+14. [Future Roadmap](#-future-roadmap)
+15. [License](#-license)
+
+---
+
+## 🎯 Project Overview & Purpose
+
+**STRATUM** solves the challenges inherent in distributed e-commerce transactions: race conditions during inventory checkout, partial failure states during payment processing, service outages, and cross-service observability.
+
+Traditional monoliths rely on heavy database transactions with `SERIALIZABLE` isolation locks that degrade under high concurrency. **STRATUM** decomposes the order lifecycle into independent, domain-driven microservices that collaborate via:
+* **Synchronous gRPC (HTTP/2 binary protobufs)** for sub-millisecond stock checks and server-side shopping cart mutations.
+* **Asynchronous Apache Kafka Topics** for resilient order creation, payment handoff, kitchen dispatch, stock depletion, and email notifications.
+* **Distributed Sagas & Dead-Letter Queues (DLQ)** to guarantee eventual consistency and auditability without blocking client threads.
+
+---
+
+## ✨ Key Features
+
+* **⚡ Dual-Protocol Communication**: High-throughput gRPC for latency-critical paths; Apache Kafka (KRaft mode) for non-blocking event-driven transaction pipelines.
+* **🛡️ Dual-Mode Google OAuth 2.0 & JWT RBAC**: Instant 1-click **Developer Sandbox** for zero-setup local testing; seamless switch to official **Google Cloud OAuth** via `.env`. Automatic role assignment for administrators (`admin@stratum.com`).
+* **📧 Automated Email Notifications (Gmail SMTP)**: Dispatches real 6-digit registration verification OTPs and welcome emails via TLS-authenticated Gmail SMTP with graceful terminal logging fallbacks.
+* **📦 Database-per-Service Isolation**: Each service strictly owns its storage (4 dedicated PostgreSQL instances + Redis cache). Zero direct cross-database queries.
+* **🧭 Dynamic Service Discovery & Health Checking**: Automatic registration with HashiCorp Consul with 1-second TTL heartbeats and client-side round-robin load balancing.
+* **📊 End-to-End Distributed Tracing**: OpenTelemetry instrumentation across HTTP endpoints, gRPC calls, and Kafka event headers, visualized in Jaeger.
+* **🛒 Synchronous Server-Owned Redis Cart**: Ephemeral basket storage with Redis TTL, eliminating stale cart drift between browser sessions.
+* **🎨 Modern React 19 Frontend**: High-performance storefront and dedicated enterprise Admin Console built with Vite, TypeScript, Tailwind CSS, TanStack Query, and Zustand.
+
+---
+
+## 🛠️ Technology Stack
+
+| Layer | Technologies |
+| :--- | :--- |
+| **Backend Services** | Go 1.20+, Gin Web Framework, gRPC Go, Protocol Buffers v3 |
+| **Event Streaming** | Apache Kafka (KRaft mode, `segmentio/kafka-go`), Kafka UI |
+| **Service Discovery** | HashiCorp Consul (Raft consensus, 1s TTL health checks) |
+| **Databases & Cache** | PostgreSQL 15 (GORM ORM), Redis 7 (Alpine) |
+| **Observability** | OpenTelemetry SDK, OTLP Trace Exporter, Jaeger Tracing |
+| **Frontend Web App** | React 19, TypeScript 5.9, Vite 8, Tailwind CSS, Lucide Icons |
+| **Frontend State & Data**| TanStack Query v5, Zustand, React Hook Form, Zod |
+| **Authentication** | Google OAuth 2.0, JWT (HS256 tokens), bcrypt password hashing |
+| **Containerization** | Docker, Docker Compose v2 |
 
 ---
 
@@ -50,635 +81,317 @@ A production-grade, event-driven Order Management System backend engineered in *
 
 ```mermaid
 flowchart TD
-    Client["💻 External Client / Frontend"] -- "HTTP / REST (JWT Bearer + RBAC)" --> Gateway["🌐 API Gateway (:8080 Gin)"]
+    Client["💻 External Browser / Storefront (:5173)"] -- "REST / JSON (Bearer JWT + OAuth)" --> Gateway["🌐 API Gateway (:8080 Gin)"]
 
-    subgraph SyncGRPC ["⚡ Synchronous gRPC Communication (HTTP/2 Protobuf)"]
+    subgraph SyncPaths ["⚡ Synchronous Low-Latency gRPC Paths"]
         Gateway -->|"CartService.GetCart / AddItem"| Cart["🛒 Cart Service (:2005)\n[Redis Cache]"]
         Gateway -->|"OrderService.CreateOrder"| Orders["📦 Orders Service (:2000)\n[PostgreSQL: orders]"]
-        Gateway -->|"StockService.GetItems / CreateItem / UpdateItem"| Stock["📊 Stock Service (:2002)\n[PostgreSQL: stock]"]
+        Gateway -->|"StockService.GetItems / CreateItem"| Stock["📊 Stock Service (:2002)\n[PostgreSQL: stock]"]
         Orders -->|"StockService.CheckIfItemIsInStock"| Stock
     end
 
-    subgraph AsyncBus ["📬 Asynchronous Event-Driven Messaging (Apache Kafka Topics & Consumer Groups)"]
+    subgraph AsyncEvents ["📬 Asynchronous Kafka Event Streaming (Topics & Consumer Groups)"]
         Orders -.->|"publish: order.created"| Payments["💳 Payments Service (:2001)\n[PostgreSQL: payments]"]
-        Payments -.->|"publish: order.paid"| Kitchen["👨‍🍳 Kitchen Service (:2003)\n[Fulfillment Worker]"]
+        Payments -.->|"publish: order.paid"| Kitchen["👨‍🍳 Kitchen Service (:2004)\n[Order Dispatch]"]
         Payments -.->|"publish: order.paid"| Stock
         Payments -.->|"publish: order.paid"| Orders
-        Payments -.->|"publish: order.paid"| Notification["🔔 Notification Service (:2006)\n[Event Logger]"]
-        Gateway -.->|"publish: user.registered"| Notification
+        Payments -.->|"publish: order.paid"| Notification["🔔 Notification Service (:2006)\n[Gmail SMTP]"]
         Gateway -.->|"publish: user.otp_requested"| Notification
+        Gateway -.->|"publish: user.registered"| Notification
     end
 
-    subgraph Mesh ["🔭 Discovery & Distributed Observability Layer"]
-        Consul["🧭 HashiCorp Consul (:8500)\n[Dynamic Registry & 1s Health Heartbeats]"]
-        Jaeger["📊 OpenTelemetry + Jaeger (:16686)\n[W3C Trace Context Propagation]"]
-        KafkaUI["📈 Kafka UI (:8085)\n[Topic & Consumer Group Telemetry]"]
+    subgraph Mesh ["🔭 Service Registry & Observability"]
+        Consul["🧭 HashiCorp Consul (:8500)\n[Dynamic Service Registry]"]
+        Jaeger["📈 Jaeger Tracing (:16686)\n[W3C Trace Context Propagation]"]
+        KafkaUI["📊 Kafka UI (:8085)\n[Topic & Lag Monitoring]"]
     end
 ```
 
 ---
 
-## 💡 Core Architectural Patterns & Design Decisions
+## 📂 Folder Structure
 
-### 1. Database-per-Service Pattern
-- Services own their datastores strictly:
-  - `gateway` ➔ PostgreSQL database `gateway` (Users, credentials, roles).
-  - `orders` ➔ PostgreSQL database `orders` (Order entities, line items, status).
-  - `payments` ➔ PostgreSQL database `payments` (Payment records, payment links, transaction references).
-  - `stock` ➔ PostgreSQL database `stock` (Inventory items, real-time stock levels, row-level atomic locks).
-  - `cart` ➔ Redis (Key-value cache with TTL).
-- Direct cross-service database access is completely prohibited. State mutations across domains are coordinated via **synchronous gRPC** or **eventual consistency via AMQP events**.
-
-### 2. Dual-Protocol Communication Architecture
-- **gRPC (Protobuf)**: Used on the critical query and reservation path where low latency, compact binary serialization, and strong type safety are required (e.g., verifying stock availability prior to order insertion).
-- **Apache Kafka (Event Streaming)**: Used for non-blocking event publishing across topics (`order.created`, `order.paid`, `user.registered`, `user.otp_requested`, and Saga rollback topics) consumed by partitioned Consumer Groups with automatic offset commits and DLQ retries.
-
-### 3. Dynamic Service Discovery & Health Checking
-- All Go microservices register themselves dynamically with **HashiCorp Consul** upon startup using a generated instance ID (`service-name-<uuid>`).
-- Services maintain a continuous **1-second TTL health check heartbeat**. If a service experiences failure, Consul automatically evicts the node after 10 seconds.
-- Client-side discovery resolves upstream addresses dynamically without hardcoded service IPs.
-
-### 4. Distributed Tracing Across Protocol Boundaries
-- Integrated with **OpenTelemetry Go SDK** exporting to **Jaeger** over OTLP HTTP (`:4318`).
-- Trace context is continuously propagated:
-  - From incoming HTTP requests to internal spans.
-  - Across gRPC unary calls via gRPC metadata.
-  - Across RabbitMQ message headers using custom injection (`broker.InjectAMQPHeaders`) and extraction (`broker.ExtractAMQPHeader`).
-
-### 5. Role-Based Access Control (RBAC) & Token Rotation
-- Custom JWT claims structure (`CustomClaims`) containing `customer_id`, `role` (`customer` or `admin`), and `token_type` (`access` or `refresh`).
-- Token lifetimes:
-  - **Access Token**: Short-lived (10 minutes) for minimizing attack surface.
-  - **Refresh Token**: Long-lived (10 days) for seamless token renewal via `/api/users/refresh`.
-- Gin route groups are protected by tiered middlewares: `authMiddleware()` ensures valid authentication; `adminAuthMiddleware()` enforces the `admin` role.
-
-### 6. Dual-Engine Payment Processor
-- **Razorpay Integration**: Creates live payment links and processes webhook callbacks with HMAC-SHA256 signature verification and idempotency safeguards.
-- **In-Memory Fallback**: When Razorpay credentials are left empty or set to `dummy_key`, the service seamlessly switches to an internal in-memory payment engine—enabling full end-to-end local testing without external third-party dependencies.
-
-### 7. Choreography-Based Saga Pattern & Distributed Rollback
-- Multi-step order transactions implement an **Event-Driven Choreography Saga**:
-  - **Forward Path**:
-    1. `orders` creates order (`pending`) and broadcasts `order.created`.
-    2. `payments` consumes `order.created`, generates payment session, and updates order.
-    3. Upon payment verification, `payments` broadcasts `order.paid`.
-    4. `stock` decrements inventory, `kitchen` begins preparation (`ready`), and `orders` marks status as `paid`.
-  - **Compensating Rollback Workflows**:
-    - **Stock Failure on Payment**: If stock decrement fails when `order.paid` is received, `stock` broadcasts `order.stock_failed` and `order.failed`. In response, `payments` triggers a refund (`order.refunded`) and `orders` marks the status as `cancelled`.
-    - **Customer or Admin Cancellation**: When an order is cancelled via `/api/customers/:customerID/orders/:orderID/cancel` or `/api/admin/orders/:orderID/cancel`, `gateway` publishes `order.cancelled`. All participating services execute compensating actions:
-      - `stock`: Calls `IncrementItems` to restore reserved quantities back to warehouse inventory.
-      - `payments`: Calls `RefundPayment` to issue customer refund and emits `order.refunded`.
-      - `kitchen`: Immediately aborts meal preparation.
-      - `orders`: Permanently transitions order state to `cancelled` or `refunded`.
-
----
-
-## 📦 Microservices Catalog & Technical Deep Dive
-
-### 1. API Gateway (`gateway`)
-- **Transport / Port**: HTTP REST (`:8080`) via Gin framework.
-- **Datastore**: PostgreSQL (`gateway` database).
-- **Key Responsibilities**:
-  - Serves as the single edge entry point for external traffic.
-  - Handles customer registration, password hashing, and JWT token issuance.
-  - Manages client-side gRPC connection pools to `orders`, `cart`, and `stock` services via Consul discovery.
-  - Enforces rate limiting (Token Bucket) and RBAC policies (`adminAuthMiddleware`).
-  - Translates gRPC status codes (`codes.InvalidArgument`, `codes.NotFound`, `codes.FailedPrecondition`) to HTTP status codes.
-- **AMQP Producer**: Publishes `user.registered` upon successful user signup.
-
-### 2. Orders Service (`orders`)
-- **Transport / Port**: gRPC (`:2000`) implementing `api.OrderServiceServer`.
-- **Datastore**: PostgreSQL (`orders` database).
-- **Key Responsibilities**:
-  - Validates and places customer orders (`CreateOrder`).
-  - Coordinates synchronous stock verification with `StockService` via gRPC before persisting the order.
-  - Manages order lifecycle transitions: `pending` ➔ `paid` ➔ `ready`.
-  - Publishes `order.created` event with OpenTelemetry tracing headers injected into RabbitMQ.
-  - Subscribes to `order.paid` to transition orders to `paid` status.
-
-### 3. Payments Service (`payments`)
-- **Transport / Port**: gRPC (`:2001`) + HTTP Webhook server (`:8081` / `:2001`).
-- **Datastore**: PostgreSQL (`payments` database).
-- **Key Responsibilities**:
-  - Subscribes to `order.created` events from RabbitMQ.
-  - Invokes payment gateway processor (Razorpay API or In-Memory fallback) to generate checkout links.
-  - Updates the order record with the generated payment link via gRPC back to `OrdersService`.
-  - Handles payment webhook callbacks, verifying the `X-Razorpay-Signature` using HMAC-SHA256.
-  - Publishes `order.paid` event upon confirmed payment capture.
-
-### 4. Stock Service (`stock`)
-- **Transport / Port**: gRPC (`:2002`) implementing `api.StockServiceServer`.
-- **Datastore**: PostgreSQL (`stock` database on port 5436) with automatic fallback to thread-safe In-Memory Store.
-- **Key Responsibilities**:
-  - Responds to `CheckIfItemIsInStock` queries on the synchronous order checkout path.
-  - Provides catalog item details (`GetItems`).
-  - Supports administrative product addition (`CreateItem`) and stock replenishment (`UpdateItem`).
-  - Subscribes to `order.paid` events via RabbitMQ and atomically deducts inventory counts via row-level SQL transactions.
-
-### 5. Kitchen Service (`kitchen`)
-- **Transport / Port**: gRPC (`:2003`) + AMQP Consumer.
-- **Datastore**: Stateless.
-- **Key Responsibilities**:
-  - Subscribes to `order.paid` events.
-  - Simulates meal preparation routines with asynchronous worker channels.
-  - Calls `OrderService.UpdateOrder` via gRPC to update the order status to `ready` once preparation finishes.
-
-### 6. Cart Service (`cart`)
-- **Transport / Port**: gRPC (`:2005`) implementing `api.CartServiceServer`.
-- **Datastore**: Redis (`:6379`).
-- **Key Responsibilities**:
-  - Manages shopping cart state per customer ID.
-  - Implements `AddItem`, `RemoveItem`, `GetCart`, and `ClearCart`.
-  - Leverages Redis hash operations for fast item mutations and key expiry.
-
-### 7. Notification Service (`notification`)
-- **Transport / Port**: AMQP Consumer (`:2006`).
-- **Datastore**: Stateless.
-- **Key Responsibilities**:
-  - Subscribes to `user.registered` and `order.paid` events.
-  - Extracts OpenTelemetry span context from message headers and logs/notifies external channels.
-
-### 8. Shared Commons (`common`)
-- **Module**: `github.com/jaydeepjr28/commons`
-- **Sub-packages**:
-  - `common/api`: Compiled Protocol Buffer stubs (`oms.pb.go`, `oms_grpc.pb.go`) and definition (`oms.proto`).
-  - `common/auth`: JWT signing, validation, claims definition, and role verification.
-  - `common/broker`: RabbitMQ connection setup, exchange declarations, DLX/DLQ management, retry backoff, and tracing header injection/extraction.
-  - `common/discovery`: HashiCorp Consul registration, deregistration, TTL health checking, and service discovery resolver.
-  - `common/tracer.go`: OpenTelemetry OTLP trace provider setup with Jaeger.
-
----
-
-## 🔁 End-to-End Transaction Sequence
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Client
-    participant GW as API Gateway (:8080)
-    participant Cart as Cart Service (:2005)
-    participant Orders as Orders Service (:2000)
-    participant Stock as Stock Service (:2002)
-    participant MQ as RabbitMQ (Fanout)
-    participant Pay as Payments Service (:2001)
-    participant Kitchen as Kitchen Service (:2003)
-
-    Client->>GW: POST /api/cart/items (Add to Cart)
-    GW->>Cart: gRPC: AddItem(CustomerID, Item)
-    Cart-->>GW: Updated Cart
-    GW-->>Client: 200 OK (Cart updated in Redis)
-
-    Client->>GW: POST /api/customers/:id/orders (Checkout)
-    GW->>Orders: gRPC: CreateOrder(CustomerID, Items)
-    Orders->>Stock: gRPC: CheckIfItemIsInStock(Items)
-    Stock-->>Orders: InStock = true
-    Orders->>Orders: INSERT order status="pending" (Postgres)
-    Orders->>MQ: Publish "order.created" (AMQP Persistent)
-    Orders-->>GW: Order created (Status: pending)
-    GW-->>Client: 200 OK { OrderID, Status: "pending" }
-
-    MQ->>Pay: Consume "order.created"
-    Pay->>Pay: Generate Payment Link (Razorpay / Inmem)
-    Pay->>Orders: gRPC: UpdateOrder(PaymentLink)
-
-    Note over Client,Pay: Customer completes payment
-    Client->>Pay: POST /webhook (Payment Success Webhook)
-    Pay->>Pay: Verify HMAC-SHA256 signature
-    Pay->>MQ: Publish "order.paid"
-
-    par Event Fanout
-        MQ->>Orders: Consume "order.paid" -> Update status="paid"
-        MQ->>Stock: Consume "order.paid" -> Deduct inventory
-        MQ->>Kitchen: Consume "order.paid" -> Start cooking
-    end
-
-    Kitchen->>Kitchen: Cook meal (Simulated)
-    Kitchen->>Orders: gRPC: UpdateOrder(Status: "ready")
+```
+oms-go-microservices/
+├── cart/                      # Ephemeral shopping cart service (gRPC + Redis)
+├── common/                    # Shared library across all Go microservices
+│   ├── api/                   # Compiled Protobuf contracts (oms.pb.go, oms_grpc.pb.go, oms.proto)
+│   ├── auth/                  # JWT token creation and validation utilities
+│   ├── broker/                # Apache Kafka producer, consumer groups, and event payloads
+│   └── discovery/             # Consul dynamic registration and gRPC client resolvers
+├── frontend/                  # React 19 + TypeScript + Vite storefront & operations dashboard
+│   ├── src/app/               # Application shell, routing, and provider bindings
+│   ├── src/components/ui/     # Design system primitives (Button, Input, Card, Dialog, Badge)
+│   ├── src/config/            # Centralized branding, photography, and metadata (site.ts)
+│   ├── src/features/          # Domain hooks (auth, cart, catalog, orders, admin)
+│   ├── src/layouts/           # StorefrontLayout (customer) & AdminLayout (RBAC restricted)
+│   └── src/pages/             # Customer storefront and Admin management pages
+├── gateway/                   # Edge API Gateway (Gin REST router, Auth, OAuth, Rate Limiting)
+├── kitchen/                   # Kitchen fulfillment service (Kafka consumer for order.paid)
+├── notification/              # Notification service (Kafka consumer, Gmail SMTP & OTP dispatcher)
+├── orders/                    # Order orchestration service (gRPC server, Kafka producer/consumer)
+├── payments/                  # Payment processing service (Razorpay SDK, Webhooks, In-memory mock)
+├── scripts/                   # Developer lifecycle automation scripts (PowerShell)
+├── stock/                     # Inventory service (gRPC server, row-level locking, GORM models)
+├── docker-compose.yml         # Containerized production stack specification
+├── docker-compose.dev.yml     # Infrastructure-only stack (Kafka, Consul, Redis, Postgres, Jaeger)
+├── go.work                    # Multi-module Go workspace definition
+└── .env                       # Central environment variables configuration
 ```
 
 ---
 
-## 📜 Protobuf Contracts (`oms.proto`)
+## ⚙️ Configuration & Environment Variables
 
-Located at `common/api/oms.proto`:
+All services load configuration from the root [`.env`](file:///c:/oms-go-microservices/.env) file:
+
+```env
+# ==============================================================================
+# Database Passwords (Container & Local)
+# ==============================================================================
+GATEWAY_POSTGRES_PASSWORD=password
+ORDERS_POSTGRES_PASSWORD=password
+PAYMENTS_POSTGRES_PASSWORD=password
+STOCK_POSTGRES_PASSWORD=password
+DEV_GATEWAY_POSTGRES_PASSWORD=password
+DEV_ORDERS_POSTGRES_PASSWORD=password
+DEV_PAYMENTS_POSTGRES_PASSWORD=password
+DEV_STOCK_POSTGRES_PASSWORD=password
+
+# ==============================================================================
+# Security & Payment Gateway
+# ==============================================================================
+JWT_SECRET_KEY=my-super-secret-key-1234
+RAZORPAY_KEY_ID=rzp_test_TaRB7WSJLruWhc
+RAZORPAY_KEY_SECRET=rasU6MRl5wfS053nkO1zCLQ3
+RAZORPAY_WEBHOOK_SECRET=#jaydeep123
+
+# ==============================================================================
+# Infrastructure Networking
+# ==============================================================================
+KAFKA_BROKERS=localhost:9092
+CONSUL_ADDR=localhost:8500
+REDIS_ADDR=localhost:6379
+JAEGER_ADDR=localhost:4318
+GATEWAY_HTTP_ADDRESS=http://localhost:8080
+FRONTEND_URL=http://localhost:5173
+
+# ==============================================================================
+# Google OAuth 2.0 (Leave empty for interactive Dev Sandbox mode)
+# ==============================================================================
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-your-google-client-secret
+GOOGLE_REDIRECT_URL=http://localhost:8080/api/auth/google/callback
+
+# ==============================================================================
+# Admin & Email Dispatch (Gmail SMTP)
+# ==============================================================================
+ADMIN_EMAIL=admin@stratum.com
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_EMAIL=your-gmail-account@gmail.com
+SMTP_PASSWORD=your-16-char-app-password
+SMTP_SENDER_NAME=STRATUM
+```
+
+---
+
+## 🗄️ Database Setup & Schemas
+
+STRATUM adheres to the **Database-per-Service** pattern with independent schemas:
+
+| Service | Engine | Port | Database Name | Primary Entities |
+| :--- | :--- | :--- | :--- | :--- |
+| **`gateway`** | PostgreSQL 15 | `5435` | `gateway` | `users` (id, email, password_hash, role, provider, provider_id, avatar_url) |
+| **`orders`** | PostgreSQL 15 | `5433` | `orders` | `orders` (id, customer_id, status, payment_link), `order_items` (order_id, item_id, quantity, price_id) |
+| **`payments`** | PostgreSQL 15 | `5434` | `payments` | `payments` (id, order_id, customer_id, amount, status, razorpay_order_id, razorpay_payment_id) |
+| **`stock`** | PostgreSQL 15 | `5436` | `stock` | `items` (id, name, price, quantity) with row-level transaction safety |
+| **`cart`** | Redis Cache | `6379` | DB 0 | `cart:<customer_id>` (JSON hash map of product IDs, quantities, and TTL expiry) |
+
+> **Automated Migrations**: Every service automatically verifies and migrates its tables using GORM `AutoMigrate` upon startup. No manual SQL scripts required.
+
+---
+
+## 🚀 Setup & Installation
+
+### 1. Prerequisites
+* **[Go](https://golang.org/)** v1.20+ (tested on v1.24/v1.26)
+* **[Docker Desktop](https://www.docker.com/)** with Docker Compose v2+
+* **[Node.js](https://nodejs.org/)** v18+ and **npm** v9+
+* **[Git](https://git-scm.com/)**
+
+### 2. Clone and Initialize Workspace
+```bash
+git clone https://github.com/jaydeepjr28/Order-Management-service---go-Microservices.git stratum
+cd stratum
+
+# Synchronize Go multi-module workspace
+go work sync
+
+# Install frontend dependencies
+cd frontend
+npm install
+cd ..
+```
+
+---
+
+## 🏃 Running the Project
+
+### Option A: Development Mode (Hybrid)
+Recommended for development. Docker hosts infrastructure; microservices and frontend run natively with rapid reload:
+
+1. **Start Infrastructure Containers**:
+   ```bash
+   docker compose -f docker-compose.dev.yml up -d
+   ```
+   *(Spins up Kafka, Kafka UI, Consul, Redis, Jaeger, and the 4 Postgres instances).*
+
+2. **Start Microservices**:
+   Run each service in separate terminal tabs (or use the provided scripts):
+   ```bash
+   cd stock && go run .
+   cd orders && go run .
+   cd payments && go run .
+   cd kitchen && go run .
+   cd cart && go run .
+   cd notification && go run .
+   cd gateway && go run .
+   ```
+
+3. **Start Frontend Dev Server**:
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+   *Frontend is live at **`http://localhost:5173`**; API Gateway at **`http://localhost:8080`**.*
+
+---
+
+### Option B: Production Mode (Docker Compose)
+To launch the entire containerized fleet (services + infrastructure + frontend):
+```bash
+docker compose up --build -d
+```
+Scale individual microservices with one command:
+```bash
+docker compose up --scale orders=2 --scale stock=2 -d
+```
+
+---
+
+## 📡 API Specification (REST & gRPC)
+
+### API Gateway REST Endpoints (`:8080`)
+
+#### Authentication & Accounts
+* `POST /api/users/register/send-otp`: Request a 6-digit registration code via Kafka.
+* `POST /api/users/register/verify-otp`: Validate code, create user account, and issue tokens.
+* `POST /api/users/login`: Authenticate via email & password.
+* `POST /api/users/refresh`: Refresh expired JWT access token using refresh token.
+* `GET  /api/auth/google/login`: Initiate Google OAuth 2.0 flow (or Dev Sandbox).
+* `GET  /api/auth/google/callback`: Handle OAuth callback, auto-provision user, issue tokens.
+
+#### Shopping Cart
+* `GET    /api/cart`: Retrieve current user's server-synchronized Redis cart.
+* `POST   /api/cart/items`: Add or increment item quantity (`{ "id": "1", "quantity": 2 }`).
+* `DELETE /api/cart/items/:productID`: Remove item from cart.
+* `DELETE /api/cart`: Clear cart session.
+
+#### Order Management
+* `POST /api/customers/:customerID/orders`: Create new order (verifies stock via gRPC, emits `order.created` to Kafka).
+* `GET  /api/customers/:customerID/orders`: List all orders for customer.
+* `GET  /api/customers/:customerID/orders/:orderID`: Retrieve specific order and payment URL.
+* `POST /api/customers/:customerID/orders/:orderID/cancel`: Cancel order and trigger Saga rollback.
+
+#### Operations & Admin Console (RBAC: `admin` role required)
+* `GET  /api/admin/orders`: Inspect all system-wide orders across customer accounts.
+* `POST /api/admin/orders/:orderID/cancel`: Force administrative order cancellation.
+* `POST /api/admin/inventory`: Add a new SKU to the stock catalog.
+* `PUT  /api/admin/inventory/:id`: Adjust live inventory quantities and unit pricing.
+* `GET  /api/admin/analytics`: Aggregate real-time stock valuation and microservice health.
+
+---
+
+### gRPC Internal Contracts (`common/api/oms.proto`)
 
 ```protobuf
 syntax = "proto3";
-
 package api;
-option go_package = "github.com/jaydeepjr28/commons/api";
-
-message Order {
-  string ID = 1;
-  string customerID = 2;
-  string Status = 3;
-  repeated Item Items = 4;
-  string PaymentLink = 5;
-}
-
-message Item {
-  string ID = 1;
-  string Name = 2;
-  int32 Quantity = 3;
-  string PriceID = 4;
-}
-
-message ItemsWithQuantity {
-  string ID = 1;
-  int32 Quantity = 2;
-}
 
 service OrderService {
   rpc CreateOrder(CreateOrderRequest) returns (Order);
   rpc GetOrder(GetOrderRequest) returns (Order);
-  rpc GetCustomerOrders(GetCustomerOrdersRequest) returns (GetCustomerOrdersResponse);
   rpc UpdateOrder(Order) returns (Order);
 }
 
 service StockService {
-  rpc CheckIfItemIsInStock(CheckIfItemIsInStockRequest) returns (CheckIfItemIsInStockResponse);
+  rpc CheckIfItemIsInStock(CheckIfItemsInStockRequest) returns (StockCheckResponse);
   rpc GetItems(GetItemsRequest) returns (GetItemsResponse);
   rpc CreateItem(CreateItemRequest) returns (Item);
   rpc UpdateItem(UpdateItemRequest) returns (Item);
 }
 
 service CartService {
+  rpc GetCart(GetCartRequest) returns (Cart);
   rpc AddItem(AddItemRequest) returns (Cart);
   rpc RemoveItem(RemoveItemRequest) returns (Cart);
-  rpc GetCart(GetCartRequest) returns (Cart);
-  rpc ClearCart(ClearCartRequest) returns (Cart);
-}
-
-service UserService {
-  rpc Register(RegisterRequest) returns (AuthResponse);
-  rpc Login(LoginRequest) returns (AuthResponse);
-  rpc GetUser(GetUserRequest) returns (User);
+  rpc ClearCart(ClearCartRequest) returns (Empty);
 }
 ```
 
 ---
 
-## 📡 API Gateway REST Specification
+## 🤖 AI Agents & Developer Pair Programming
 
-Base URL: `http://localhost:8080`
-
-### Authentication & Users
-
-#### 1. Request Registration Verification Code (OTP)
-`POST /api/users/register/send-otp`
-```json
-{
-  "name": "Alex Mercer",
-  "email": "customer@example.com",
-  "password": "securepassword123"
-}
-```
-**Response (200 OK):**
-```json
-{
-  "message": "Verification code sent to your email",
-  "email": "customer@example.com",
-  "expiresInSeconds": 300,
-  "cooldownSeconds": 60
-}
-```
-
-#### 2. Verify OTP & Finalize Registration
-`POST /api/users/register/verify-otp`
-```json
-{
-  "email": "customer@example.com",
-  "otp": "492810"
-}
-```
-**Response (201 Created):**
-```json
-{
-  "accessToken": "eyJhbGciOiJIUzI1NiIs...",
-  "refreshToken": "eyJhbGciOiJIUzI1NiIs...",
-  "customerID": "customer@example.com",
-  "role": "customer",
-  "name": "Alex Mercer"
-}
-```
-
-#### 3. Resend Registration Code
-`POST /api/users/register/resend-otp`
-```json
-{
-  "email": "customer@example.com"
-}
-```
-
-#### 4. Direct User Registration (Legacy / Automated)
-`POST /api/users/register`
-```json
-{
-  "email": "customer@example.com",
-  "password": "securepassword123",
-  "name": "Alex Mercer"
-}
-```
-**Response (200 OK):**
-```json
-{
-  "AccessToken": "eyJhbGciOiJIUzI1NiIs...",
-  "RefreshToken": "eyJhbGciOiJIUzI1NiIs...",
-  "CustomerID": "customer@example.com"
-}
-```
-
-#### 2. User Login
-`POST /api/users/login`
-```json
-{
-  "email": "customer@example.com",
-  "password": "securepassword123"
-}
-```
-**Response (200 OK):** Returns new `AccessToken` and `RefreshToken`.
-
-#### 3. Refresh Access Token
-`POST /api/users/refresh`
-```json
-{
-  "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
-}
-```
-**Response (200 OK):** Returns fresh `AccessToken` and rotated `RefreshToken`.
+STRATUM was engineered with automated developer ergonomics and agentic workflows in mind:
+* **Pre-Integrated IDE Context**: Contains structured knowledge items and schemas enabling AI assistants (like Google DeepMind Antigravity, GitHub Copilot, and Cursor) to accurately trace gRPC stubs, Kafka topics, and typed frontend contracts.
+* **Deterministic Dual-Mode Testing**: When third-party credentials (like Google OAuth or Razorpay keys) are absent, services dynamically activate interactive sandboxes so agents and automated tests can run without blocking on manual external logins.
+* **Resilient Graceful Degradation**: Eliminates hard `log.Fatalf` crashes during downstream service restarts, enabling continuous background integration without cascade failures.
 
 ---
 
-### Cart Operations
-*Requires `Authorization: Bearer <AccessToken>`*
+## 🔄 Usage Workflows
 
-- `GET /api/cart` — Fetch customer's active cart.
-- `POST /api/cart/items` — Add an item to cart:
-  ```json
-  {
-    "productID": "1",
-    "quantity": 2
-  }
-  ```
-- `DELETE /api/cart/items/:productID` — Remove a specific product from cart.
-- `DELETE /api/cart` — Clear the entire cart.
+### 1. Customer Shopping & Asynchronous Fulfillment
+1. **Browse**: User browses artisanal products on `http://localhost:5173/products`. Catalog is fetched live from the `stock` service via Gateway.
+2. **Basket**: User adds items to cart. Requests synchronize immediately with the Redis `cart` service.
+3. **Checkout**: User clicks "Place Order".
+   - Gateway calls `OrderService.CreateOrder` via gRPC.
+   - `orders` service executes a synchronous gRPC stock reservation check against `stock`.
+   - Order is inserted as `status: "pending"` and emits `order.created` to Kafka.
+4. **Payment Handoff**: `payments` service consumes `order.created`, generates a payment link, and saves it. The frontend polls and displays the payment action button.
+5. **Fulfillment**: Once marked paid, `payments` emits `order.paid`. `kitchen` starts preparation, `stock` permanently deducts physical inventory, and `notification` sends a confirmation email.
 
----
-
-### Order Management
-*Requires `Authorization: Bearer <AccessToken>`*
-
-- `POST /api/customers/:customerID/orders` — Checkout order:
-  ```json
-  [
-    { "ID": "1", "Quantity": 2 },
-    { "ID": "2", "Quantity": 1 }
-  ]
-  ```
-  **Response (200 OK):**
-  ```json
-  {
-    "ID": "66df2e8f1a2b3c4d",
-    "customerID": "customer@example.com",
-    "Status": "pending",
-    "Items": [
-      { "ID": "1", "Name": "Burger", "Quantity": 2, "PriceID": "price_1" }
-    ],
-    "PaymentLink": ""
-  }
-  ```
-- `GET /api/customers/:customerID/orders` — List all orders for the authenticated customer.
-- `GET /api/customers/:customerID/orders/:orderID` — Fetch detailed order data.
-- `GET /api/customers/:customerID/orders/:orderID/status` — Fetch current status (`pending`, `paid`, `ready`).
+### 2. Admin Operations & Inventory Audit
+1. Sign in using `admin@stratum.com` (via Google OAuth or standard login).
+2. Gateway verifies the email matches `ADMIN_EMAIL` and embeds `role: "admin"` in the JWT.
+3. The frontend unlocks the **Admin Console** at `/admin`.
+4. The administrator can adjust SKU quantities in real time, view company inventory valuation, audit active customer orders, or cancel stalled transactions.
 
 ---
 
-### Inventory Catalog
-*Requires `Authorization: Bearer <AccessToken>`*
+## 👥 Contributing Guidelines
 
-- `GET /api/inventory` — Lists available catalog products and live stock availability.
-
----
-
-### Admin Management Endpoints (RBAC Restricted)
-*Requires `Authorization: Bearer <AccessToken>` where JWT contains claim `"role": "admin"`*
-
-#### 1. Add / Provision New Product Item
-`POST /api/admin/inventory`
-```json
-{
-  "ID": "3",
-  "Name": "Crispy Fries",
-  "Quantity": 50,
-  "PriceID": "price_1PBaC2RoHcnwnsLnYLWpx1CK"
-}
-```
-**Response (201 Created):**
-```json
-{
-  "ID": "3",
-  "Name": "Crispy Fries",
-  "Quantity": 50,
-  "PriceID": "price_1PBaC2RoHcnwnsLnYLWpx1CK"
-}
-```
-
-#### 2. Update Product Item / Replenish Stock
-`PUT /api/admin/inventory/:id`
-```json
-{
-  "Name": "Crispy Fries XL",
-  "Quantity": 100,
-  "PriceID": "price_1PBaC2RoHcnwnsLnYLWpx1CK"
-}
-```
-**Response (200 OK):**
-```json
-{
-  "ID": "3",
-  "Name": "Crispy Fries XL",
-  "Quantity": 100,
-  "PriceID": "price_1PBaC2RoHcnwnsLnYLWpx1CK"
-}
-```
-
-#### 3. View System-wide Orders
-`GET /api/admin/orders`
-
-#### 4. Fetch Aggregated Metrics
-`GET /api/admin/analytics`
+1. **Fork the Repository** and create a feature branch (`git checkout -b feat/new-capability`).
+2. **Ensure Compilation**:
+   - Go modules: `go build ./...` must succeed across all modules with zero errors.
+   - Frontend: `npm run build` must complete with zero TypeScript warnings.
+3. **Preserve Documentation Integrity**: Update contracts in `common/api/oms.proto` and recompile stubs using `protoc` if payload definitions change.
+4. **Follow Semantic Commits**: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`.
+5. **Open a Pull Request** against `main`.
 
 ---
 
-### Payments Webhook
-*Payments Service exposed at port `:2001` / `:8081`*
+## 🗺️ Future Roadmap
 
-- `POST /webhook` — Invoked by Razorpay after customer checkout:
-  - Headers: `X-Razorpay-Signature: <hmac_sha256_hash>`
-  - Body: Razorpay payment payload. Validates signature and publishes `order.paid` event.
-
----
-
-## 🛡️ Reliability, Fault Tolerance & DLQ
-
-The messaging layer (`common/broker/kafka.go`) includes enterprise-grade resilience features:
-
-```
-[Service Error / Message Processing Failure]
-            │
-            ▼
-    [HandleKafkaRetry()] ─── x-retry-count < 3? ──► [Backoff: 1s, 2s, 3s] ──► [Re-publish to Topic]
-            │
-            └─── x-retry-count >= 3?
-                    │
-                    ▼
-            [Route to Dead Letter Topic: "dlq.main"] (Persistent)
-```
-
-1. **Dead Letter Topic (DLQ)**: If a message repeatedly fails unmarshaling or business execution, it is routed to the `dlq.main` topic for post-mortem analysis.
-2. **Exponential Backoff**: Transient failures are automatically retried up to `MaxRetryCount = 3` with incremental sleep delays before DLQ routing.
-3. **Partitioned Consumer Groups**: Microservices consume events via consumer groups (`orders-service-group`, `stock-service-group`, `kitchen-service-group`, `payments-service-group`, `notification-service-group`), guaranteeing ordered partition processing and horizontal scalability.
-
----
-
-## 🔭 Distributed Tracing & Context Propagation
-
-Every incoming request is tagged with a trace context and propagated across service boundaries:
-
-```
-HTTP Request (Client)
-   │ (W3C Traceparent Header)
-   ▼
-[API Gateway] ──(gRPC Metadata Context)──► [Orders Service]
-                                                  │
-                                                  ▼ (broker.InjectAMQPHeaders)
-                                            [RabbitMQ Header: "traceparent"]
-                                                  │
-                                                  ▼ (broker.ExtractAMQPHeader)
-                                            [Payments / Stock / Kitchen]
-```
-
-- Spans are collected asynchronously by the **Jaeger OTLP HTTP receiver** at `http://localhost:4318/v1/traces`.
-- Visual inspection of end-to-end waterfall charts is available at `http://localhost:16686`.
-
----
-
-## ⚙️ Environment Configuration
-
-Define a `.env` file in the project root:
-
-```env
-# JWT Secret Key for token signing and validation
-JWT_SECRET_KEY=my-super-secret-key-1234
-
-# PostgreSQL Database Passwords (Local)
-GATEWAY_POSTGRES_PASSWORD=password
-ORDERS_POSTGRES_PASSWORD=password
-PAYMENTS_POSTGRES_PASSWORD=password
-STOCK_POSTGRES_PASSWORD=password
-
-# PostgreSQL Database Passwords (Docker Compose)
-DEV_GATEWAY_POSTGRES_PASSWORD=password
-DEV_ORDERS_POSTGRES_PASSWORD=password
-DEV_PAYMENTS_POSTGRES_PASSWORD=password
-DEV_STOCK_POSTGRES_PASSWORD=password
-
-# Razorpay Payment Gateway (Leave blank or set to dummy_key for In-Memory offline mode)
-RAZORPAY_KEY_ID=
-RAZORPAY_KEY_SECRET=
-RAZORPAY_WEBHOOK_SECRET=
-RAZORPAY_ITEM_PRICES={"1":19900,"2":9900}
-
-# Public Gateway Edge Address
-GATEWAY_HTTP_ADDRESS=http://localhost:8080
-```
-
-> [!TIP]
-> **Zero-Config Offline Mode**: When `RAZORPAY_KEY_ID` is empty or set to `dummy_key`, the backend automatically instantiates the `inmem` payment processor. Checkout flows complete with immediate mock approval without external network calls.
-
----
-
-## 🚀 Running the Backend
-
-### Option A: Fully Containerized (Docker Compose)
-
-To start the complete backend fleet (all 7 microservices + 4 PostgreSQL instances + Redis + RabbitMQ + Consul + Jaeger):
-
-```bash
-docker compose -f docker-compose.dev.yml up --build
-```
-
-To run detached in background:
-```bash
-docker compose -f docker-compose.dev.yml up -d --build
-```
-
-To stop all services and tear down containers:
-```bash
-docker compose -f docker-compose.dev.yml down
-```
-
----
-
-### Option B: Hybrid Development Mode
-
-Run database and broker infrastructure in Docker while executing Go microservices directly on your host machine for native debugging:
-
-1. **Spin up infrastructure services:**
-   ```bash
-   make deps
-   ```
-   *(Provisions RabbitMQ, Consul, Jaeger, Redis, and 4x PostgreSQL instances)*
-
-2. **Launch all Go microservices simultaneously:**
-   ```bash
-   make run
-   ```
-   *(Copies root `.env` to all service directories and spawns `gateway`, `orders`, `stock`, `payments`, `kitchen`, `cart`, and `notification`)*
-
-3. **Or run any individual service manually:**
-   ```bash
-   cd orders
-   go run .
-   ```
-
----
-
-## 👑 Administrative Bootstrap
-
-To test RBAC and access administrative routes:
-
-1. Send a registration request to the Gateway:
-   ```bash
-   curl -X POST http://localhost:8080/api/users/register \
-     -H "Content-Type: application/json" \
-     -d '{
-       "email": "admin@stratum.com",
-       "password": "adminpassword123",
-       "name": "System Administrator"
-     }'
-   ```
-2. The Gateway automatically checks if the email is `admin@stratum.com` (or `admin@oms.com`) and grants the account the **`admin`** role.
-3. Use the returned `AccessToken` in the `Authorization: Bearer <token>` header to call `/api/admin/*` endpoints. Any non-admin token will receive an immediate `403 Forbidden` response.
-
----
-
-## 📊 Observability & Infrastructure Consoles
-
-| Infrastructure Service | URL | Default Credentials / Purpose |
-| :--- | :--- | :--- |
-| **API Gateway** | `http://localhost:8080` | Edge REST API entry point |
-| **Kafka UI Dashboard** | `http://localhost:8085` | Inspect Kafka topics, messages, consumer groups, and lag |
-| **Jaeger Tracing UI** | `http://localhost:16686` | End-to-end request waterfall traces across HTTP, gRPC, and Kafka |
-| **HashiCorp Consul** | `http://localhost:8500` | Microservice service catalog and real-time health checks |
-| **Gateway PostgreSQL** | `localhost:5435` | Database: `gateway` \| User: `postgres` |
-| **Orders PostgreSQL** | `localhost:5433` | Database: `orders` \| User: `postgres` |
-| **Payments PostgreSQL** | `localhost:5434` | Database: `payments` \| User: `postgres` |
-| **Stock PostgreSQL** | `localhost:5436` | Database: `stock` \| User: `postgres` |
-| **Redis Cache** | `localhost:6379` | Fast ephemeral shopping cart storage |
+- [ ] **Kubernetes Manifests & Helm Charts**: Declarative deployment manifests for GCP GKE and AWS EKS.
+- [ ] **Real-Time WebSocket Gateway**: Replace client order status polling with real-time bidirectional WebSocket events.
+- [ ] **Elasticsearch Catalog Search**: Full-text fuzzy search with faceted category filtering across tens of thousands of SKUs.
+- [ ] **Temporal / Cadence Workflow Engine**: Migrate complex long-running Saga rollbacks to stateful orchestrators.
 
 ---
 
 ## 📄 License
 
-This codebase is open-source and intended for learning distributed systems engineering, event-driven architectures, and Go microservices patterns.
+This codebase is open-source under the [MIT License](LICENSE). Built for learning and engineering production-grade distributed microservices, event-driven architectures, and Go systems programming.
